@@ -4,6 +4,41 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>المنصة الطبية التخصصية</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#0077b6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="المنصة الطبية">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- PWA Manifest مدمج -->
+    <link rel="manifest" href='data:application/manifest+json,{
+        "name": "المنصة الطبية التخصصية",
+        "short_name": "المنصة الطبية",
+        "description": "منصة طبية تخصصية لحجز المواعيد",
+        "start_url": "./",
+        "display": "standalone",
+        "background_color": "#e0f7fa",
+        "theme_color": "#0077b6",
+        "orientation": "portrait",
+        "icons": [
+            {
+                "src": "data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Crect width=\'100\' height=\'100\' rx=\'20\' fill=\'%230077b6\'/%3E%3Cpath d=\'M50 20 L50 80 M30 40 L70 40 M35 60 L65 60\' stroke=\'white\' stroke-width=\'8\' stroke-linecap=\'round\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'35\' fill=\'none\' stroke=\'white\' stroke-width=\'4\'/%3E%3C/svg%3E",
+                "sizes": "192x192",
+                "type": "image/svg+xml"
+            },
+            {
+                "src": "data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Crect width=\'100\' height=\'100\' rx=\'20\' fill=\'%230077b6\'/%3E%3Cpath d=\'M50 20 L50 80 M30 40 L70 40 M35 60 L65 60\' stroke=\'white\' stroke-width=\'8\' stroke-linecap=\'round\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'35\' fill=\'none\' stroke=\'white\' stroke-width=\'4\'/%3E%3C/svg%3E",
+                "sizes": "512x512",
+                "type": "image/svg+xml"
+            }
+        ]
+    }'>
+    
+    <!-- أيقونة Apple -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230077b6'/%3E%3Cpath d='M50 20 L50 80 M30 40 L70 40 M35 60 L65 60' stroke='white' stroke-width='8' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='50' r='35' fill='none' stroke='white' stroke-width='4'/%3E%3C/svg%3E">
+    
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -12,8 +47,7 @@
 
         const firebaseConfig = {
             apiKey: "AIzaSyCBbeaPoAYILiVX3yGqhtdvEktZ5DIxlpY",
-            authDomain: "clinic-fa8a2.firebaseapp.com",
-            projectId: "clinic-fa8a2",
+            authDomain: "clinic-fa8a2.firebaseapp.com",            projectId: "clinic-fa8a2",
             storageBucket: "clinic-fa8a2.firebasestorage.app",
             messagingSenderId: "316441755643",
             appId: "1:316441755643:web:ba058608b7f7196596155e"
@@ -23,13 +57,17 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
+        // متغير لتتبع حالة المستخدم (إدارة أم لا)
+        let isAdminMode = false;
+
         // دوال مساعدة
         window.showAppContent = async () => {
             try {
+                isAdminMode = false;
                 document.getElementById('login-section').classList.add('hidden');
                 document.getElementById('admin-panel').classList.add('hidden');
                 document.getElementById('app-content').classList.remove('hidden');
-                await loadPosts();
+                await loadPosts(false);
             } catch (err) {
                 console.error('Error:', err);
             }
@@ -37,27 +75,28 @@
 
         window.showAdminPanel = async () => {
             try {
+                isAdminMode = true;
                 document.getElementById('login-section').classList.add('hidden');
                 document.getElementById('app-content').classList.add('hidden');
                 document.getElementById('admin-panel').classList.remove('hidden');
                 
-                // تحميل كل شيء
                 await loadAppointments();
                 await loadPendingUsers();
                 await loadApprovedUsers();
-                await loadPosts();
+                await loadPosts(true);
             } catch (err) {
-                console.error('Error loading admin panel:', err);                alert('خطأ في تحميل البيانات: ' + err.message);
+                console.error('Error loading admin panel:', err);
+                alert('خطأ في تحميل البيانات: ' + err.message);
             }
         };
 
         window.showLogin = async () => {
             try {
                 await signOut(auth);
+                isAdminMode = false;
                 document.getElementById('login-section').classList.remove('hidden');
                 document.getElementById('app-content').classList.add('hidden');
-                document.getElementById('admin-panel').classList.add('hidden');
-                document.getElementById('userEmail').value = '';
+                document.getElementById('admin-panel').classList.add('hidden');                document.getElementById('userEmail').value = '';
                 document.getElementById('userPass').value = '';
                 document.getElementById('adminPass').value = '';
                 document.getElementById('user-status').textContent = '';
@@ -67,12 +106,11 @@
             }
         };
 
-        // التحقق من تسجيل الدخول
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 document.getElementById('user-status').textContent = `مرحباً، ${user.email}`;
                 document.getElementById('logout-btn').classList.remove('hidden');
-                await loadPosts();
+                await loadPosts(false);
             }
         });
 
@@ -96,7 +134,8 @@
             const pass = document.getElementById('userPass').value;
             
             if (!email || !pass) {
-                alert('يرجى ملء جميع الحقول');                return;
+                alert('يرجى ملء جميع الحقول');
+                return;
             }
             
             try {
@@ -106,8 +145,7 @@
                 if (!isApproved) {
                     await signOut(auth);
                     alert('عذراً، حسابك لا يزال قيد مراجعة الإدارة.');
-                    return;
-                }
+                    return;                }
                 
                 await window.showAppContent();
             } catch (error) {
@@ -145,7 +183,8 @@
                 
                 await createUserWithEmailAndPassword(auth, email, pass);
                 await addDoc(collection(db, "users"), {
-                    email: email,                    isApproved: false,
+                    email: email,
+                    isApproved: false,
                     role: 'patient',
                     createdAt: new Date().toLocaleDateString('ar-SA')
                 });
@@ -155,8 +194,7 @@
                 switchTab('login');
                 
             } catch (error) {
-                alert('خطأ: ' + error.message);
-            }
+                alert('خطأ: ' + error.message);            }
         };
 
         window.handleLogout = async () => {
@@ -194,7 +232,8 @@
             try {
                 await addDoc(collection(db, "appointments"), {
                     name: name,
-                    phone: phone,                    date: date,
+                    phone: phone,
+                    date: date,
                     notes: notes || 'لا يوجد',
                     status: 'pending',
                     createdAt: new Date().toISOString()
@@ -204,8 +243,7 @@
                 document.getElementById('appointmentPhone').value = '';
                 document.getElementById('appointmentDate').value = '';
                 document.getElementById('appointmentNotes').value = '';
-                
-                alert('✅ تم إرسال طلب الحجز بنجاح!');
+                                alert('✅ تم إرسال طلب الحجز بنجاح!');
             } catch (error) {
                 alert('خطأ: ' + error.message);
             }
@@ -243,7 +281,8 @@
                         'cancelled': 'background:#fee2e2; color:#991b1b;'
                     };
                     
-                    const statusText = {                        'pending': '⏳ انتظار',
+                    const statusText = {
+                        'pending': '⏳ انتظار',
                         'confirmed': '✅ مؤكد',
                         'completed': '✔️ مكتمل',
                         'cancelled': '❌ ملغي'
@@ -253,8 +292,7 @@
                         <div class="appointment-card">
                             <div class="appointment-header">
                                 <div>
-                                    <strong>${data.name}</strong>
-                                    <span style="background:${statusColors[data.status]}; padding:3px 10px; border-radius:12px; font-size:11px; margin-right:8px;">${statusText[data.status]}</span>
+                                    <strong>${data.name}</strong>                                    <span style="background:${statusColors[data.status]}; padding:3px 10px; border-radius:12px; font-size:11px; margin-right:8px;">${statusText[data.status]}</span>
                                 </div>
                                 <span class="post-date">${data.date}</span>
                             </div>
@@ -292,7 +330,8 @@
             try {
                 const q = query(collection(db, "users"), where("isApproved", "==", false));
                 const querySnapshot = await getDocs(q);
-                const wrapper = document.getElementById('pending-users-wrapper');                wrapper.innerHTML = "";
+                const wrapper = document.getElementById('pending-users-wrapper');
+                wrapper.innerHTML = "";
                 
                 console.log('الطلبات المعلقة:', querySnapshot.size);
                 
@@ -302,8 +341,7 @@
                 }
 
                 querySnapshot.forEach((docSnap) => {
-                    const data = docSnap.data();
-                    wrapper.innerHTML += `
+                    const data = docSnap.data();                    wrapper.innerHTML += `
                         <div class="user-card">
                             <div class="user-info"><strong>${data.email}</strong></div>
                             <div class="user-actions">
@@ -341,7 +379,8 @@
                             <div class="user-info"><strong>${data.email}</strong></div>
                             <div class="user-actions">
                                 <button onclick="deleteDoc(doc(db, 'users', '${docSnap.id}')).then(loadApprovedUsers)" class="btn-action btn-delete">حذف</button>
-                            </div>                        </div>`;
+                            </div>
+                        </div>`;
                 });
                 
                 document.getElementById('users-count').textContent = `(${count})`;
@@ -351,8 +390,7 @@
         };
 
         window.approveUser = async (docId) => {
-            try {
-                await updateDoc(doc(db, "users", docId), { isApproved: true });
+            try {                await updateDoc(doc(db, "users", docId), { isApproved: true });
                 await loadPendingUsers();
                 await loadApprovedUsers();
                 alert('✅ تم القبول');
@@ -385,28 +423,39 @@
                     document.getElementById('postText').value = '';
                     document.getElementById('imageInput').value = '';
                     alert('✅ تم النشر');
-                    await loadPosts();
+                    await loadPosts(true);
                 } catch (err) {
                     alert('خطأ: ' + err.message);
                 }
             };
-            reader.readAsDataURL(file);        };
+            reader.readAsDataURL(file);
+        };
 
-        window.loadPosts = async () => {
+        // دالة تحميل التدوينات مع التحكم في أزرار الإدارة
+        window.loadPosts = async (showAdminButtons = false) => {
             try {
                 const querySnapshot = await getDocs(collection(db, "posts"));
                 const wrapper = document.getElementById('posts-wrapper');
                 wrapper.innerHTML = "";
                 
                 console.log('عدد التدوينات:', querySnapshot.size);
-                
-                if (querySnapshot.empty) {
+                                if (querySnapshot.empty) {
                     wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:40px;'>لا توجد تدوينات</p>";
                     return;
                 }
 
                 querySnapshot.forEach((docSnap) => {
                     const data = docSnap.data();
+                    
+                    // أزرار الإدارة تظهر فقط عندما يكون showAdminButtons = true
+                    const adminButtons = showAdminButtons ? `
+                        <div class="post-actions">
+                            <button onclick="deleteDoc(doc(db, 'posts', '${docSnap.id}')).then(()=>loadPosts(true))" class="btn-action btn-delete">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                                حذف
+                            </button>
+                        </div>` : '';
+                    
                     wrapper.innerHTML += `
                         <div class="post-card">
                             <div class="post-header">
@@ -415,9 +464,7 @@
                             </div>
                             <img src="${data.img}" style="width:100%; border-radius:8px; margin-bottom:12px;">
                             <p>${data.text}</p>
-                            <div class="post-actions">
-                                <button onclick="deleteDoc(doc(db, 'posts', '${docSnap.id}')).then(loadPosts)" class="btn-action btn-delete">حذف</button>
-                            </div>
+                            ${adminButtons}
                         </div>`;
                 });
             } catch (err) {
@@ -436,10 +483,36 @@
             document.getElementById('whatsappLink').href = "https://wa.me/" + num;
             alert("✅ تم الحفظ");
         };
+
+        // ========== تثبيت التطبيق (PWA) ==========
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;            // إظهار زر التثبيت
+            const installBtn = document.getElementById('install-btn');
+            if (installBtn) {
+                installBtn.classList.remove('hidden');
+            }
+        });
+
+        window.installApp = async () => {
+            if (!deferredPrompt) {
+                alert('لتثبيت التطبيق:\n\n• على iPhone: اضغط زر المشاركة ثم "إضافة إلى الشاشة الرئيسية"\n\n• على Android: اضغط القائمة (⋮) ثم "تثبيت التطبيق"');
+                return;
+            }
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                console.log('تم تثبيت التطبيق');
+                document.getElementById('install-btn').classList.add('hidden');
+            }
+            deferredPrompt = null;
+        };
     </script>
     <style>
         :root {
-            --primary: #0077b6;            --secondary: #2a9d8f;
+            --primary: #0077b6;
+            --secondary: #2a9d8f;
             --dark: #264653;
             --white: #ffffff;
             --radius: 16px;
@@ -464,8 +537,7 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
-            margin: 0 auto;
-            max-width: 450px; 
+            margin: 0 auto;            max-width: 450px; 
             width: 90%;
             background: var(--white); 
             padding: 40px 30px; 
@@ -488,7 +560,8 @@
             max-width: 800px; 
             width: 90%; 
             border-radius: var(--radius); 
-            box-shadow: 0 8px 32px rgba(0, 119, 182, 0.1);        }
+            box-shadow: 0 8px 32px rgba(0, 119, 182, 0.1);
+        }
 
         .login-header { text-align: center; margin-bottom: 25px; }
         .login-header h2 { color: var(--primary); margin: 0 0 8px 0; }
@@ -513,10 +586,31 @@
             cursor: pointer; margin-top: 10px;
         }
         
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-secondary { background: var(--secondary); color: white; }
+        .btn-primary { background: var(--primary); color: white; }        .btn-secondary { background: var(--secondary); color: white; }
         .btn-admin { background: #f8f9fa; color: var(--dark); border: 2px solid #e9ecef; }
         .btn-ghost { background: transparent; color: #666; border: 1px dashed #ccc; }
+        
+        .btn-install {
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            color: #000;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-family: 'Cairo', sans-serif;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+            transition: all 0.3s;
+        }
+        .btn-install:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 215, 0, 0.5);
+        }
 
         .admin-divider { text-align: center; margin: 25px 0 15px; position: relative; }
         .admin-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e9ecef; }
@@ -537,11 +631,15 @@
         .user-card, .post-card, .appointment-card { 
             background: #fafafa; border-radius: 12px; padding: 20px; 
             margin-bottom: 15px; border: 1px solid #eee;
-        }        
+        }
+        
         .user-actions { display: flex; gap: 10px; margin-top: 10px; }
         .btn-action { 
-            flex: 1; padding: 10px; border: none; border-radius: 8px; 
-            font-family: 'Cairo'; cursor: pointer;
+            flex: 1; padding: 10px; border: none; border-radius: 8px;             font-family: 'Cairo'; cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
         .btn-delete { background: #fee2e2; color: #dc2626; }
         .btn-share { background: #d1fae5; color: #059669; }
@@ -605,6 +703,15 @@
     </div>
 
     <button onclick="browseAsGuest()" class="btn-key btn-ghost">تصفح كزائر</button>
+    
+    <!-- زر تثبيت التطبيق -->
+    <button id="install-btn" onclick="installApp()" class="btn-install hidden">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+            <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+        </svg>
+        تثبيت التطبيق على الجهاز
+    </button>
 </section>
 
 <div id="admin-panel" class="admin-fullscreen hidden">
@@ -619,24 +726,24 @@
     </div>
 
     <div class="admin-section">
-        <label>📱 رقم الواتساب</label>
+        <label> رقم الواتساب</label>
         <div style="display:flex; gap:10px; margin-top:10px;">
             <input type="text" id="whatsappNumber" placeholder="966500000000" class="modern-input" style="margin:0;">
             <button onclick="updateWhatsApp()" class="btn-key btn-secondary" style="width:auto; margin:0; padding:0 20px;">حفظ</button>
         </div>
     </div>
 
-    <div class="admin-section">
-        <h4>⏳ الطلبات المعلقة</h4>
+    <div class="admin-section">        <h4>⏳ الطلبات المعلقة</h4>
         <div id="pending-users-wrapper"></div>
     </div>
 
     <div class="admin-section">
-        <h4>👥 المشتركين <span id="users-count"></span></h4>
+        <h4> المشتركين <span id="users-count"></span></h4>
         <div id="approved-users-wrapper"></div>
     </div>
+
     <div class="admin-section">
-        <h4>📝 نشر تدوينة</h4>
+        <h4> نشر تدوينة</h4>
         <input type="text" id="postTitle" placeholder="العنوان" class="modern-input">
         <textarea id="postText" placeholder="المحتوى" class="modern-input" rows="3"></textarea>
         <input type="file" id="imageInput" accept="image/*" class="modern-input">
@@ -664,7 +771,7 @@
                 <button onclick="bookAppointment()" class="btn-key btn-secondary">إرسال طلب الحجز</button>
             </div>
             
-            <a id="whatsappLink" href="https://wa.me/" target="_blank" class="btn-footer"> واتساب</a>
+            <a id="whatsappLink" href="https://wa.me/" target="_blank" class="btn-footer">💬 واتساب</a>
             <p style="margin-top:30px; font-size:13px; opacity:0.7;">© 2026</p>
         </div>
     </footer>
@@ -675,8 +782,7 @@
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         if (tab === 'login') {
             document.querySelectorAll('.tab-btn')[0].classList.add('active');
-            document.getElementById('login-form').classList.remove('hidden');
-            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('login-form').classList.remove('hidden');            document.getElementById('register-form').classList.add('hidden');
         } else {
             document.querySelectorAll('.tab-btn')[1].classList.add('active');
             document.getElementById('login-form').classList.add('hidden');
@@ -684,5 +790,6 @@
         }
     }
 </script>
+
 </body>
 </html>
