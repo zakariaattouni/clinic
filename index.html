@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>المنصة الطبية التخصصية</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; display: flex; flex-direction: column; min-height: 100vh; }
+        header { background: #00796b; color: #fff; padding: 20px; text-align: center; }
+        .blog-container, .admin-section { padding: 20px; max-width: 800px; margin: 20px auto; background: #fff; border-radius: 8px; width: 90%; }
+        
+        /* تنسيق زر المشاركة تحت التدوينة */
+        .share-post-btn { background-color: #00796b; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        
+        footer { background: #333; color: white; padding: 20px; text-align: center; margin-top: auto; }
+        .faq-item { text-align: right; margin-bottom: 10px; border-bottom: 1px solid #555; padding-bottom: 5px; }
+        .btn-footer { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; text-decoration: none; color: white; margin: 5px; display: inline-block; }
+        .whatsapp-btn { background-color: #25d366; }
+        .hidden { display: none; }
+        input, textarea { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="font-size: 24px; font-weight: bold;">🏥 المنصة الطبية التخصصية</div>
+    <button onclick="document.getElementById('admin-login').classList.toggle('hidden')">دخول الإدارة</button>
+</header>
+
+<section id="admin-login" class="admin-section hidden">
+    <h3>لوحة التحكم</h3>
+    <input type="password" id="passInput" placeholder="كلمة السر">
+    <button onclick="checkPassword()">دخول</button>
+    <div id="admin-panel" class="hidden">
+        <input type="text" id="whatsappNumber" placeholder="رقم الواتساب">
+        <button onclick="updateWhatsApp()">حفظ الرقم</button>
+        <hr>
+        <input type="text" id="postTitle" placeholder="عنوان المقال">
+        <textarea id="postText" placeholder="المحتوى"></textarea>
+        <input type="file" id="imageInput" accept="image/*">
+        <button onclick="addPost()">نشر في المدونة</button>
+    </div>
+</section>
+
+<section id="blog" class="blog-container">
+    <h2>أحدث المقالات والحالات</h2>
+    <div id="posts-wrapper"></div>
+</section>
+
+<footer>
+    <section class="booking-section" style="color: #ddd;">
+        <h2>حجز موعد</h2>
+        <input type="text" placeholder="الاسم الكامل">
+        <input type="date">
+        <button onclick="alert('تم إرسال الطلب')" style="padding: 10px; width: 100%; background: #00796b; color: white; border: none; cursor: pointer;">إرسال طلب الحجز</button>
+    </section>
+    <h3>الأسئلة الشائعة</h3>
+    <div class="faq-item">
+        <details>
+            <summary>كيف يمكنني حجز موعد؟</summary>
+            <p>يمكنك استخدام نموذج الحجز أعلاه أو التواصل مباشرة عبر واتساب.</p>
+        </details>
+    </div>
+    <div class="footer-buttons">
+        <a id="whatsappLink" href="#" target="_blank" class="btn-footer whatsapp-btn">واتساب</a>
+    </div>
+</footer>
+
+<script>
+    function checkPassword() {
+        if (document.getElementById('passInput').value === 'salem1959') {
+            document.getElementById('admin-panel').classList.remove('hidden');
+        } else { alert('خطأ في كلمة السر'); }
+    }
+    function updateWhatsApp() {
+        const num = document.getElementById('whatsappNumber').value;
+        document.getElementById('whatsappLink').href = "https://wa.me/" + num;
+        alert("تم التحديث");
+    }
+    function addPost() {
+        const title = document.getElementById('postTitle').value;
+        const text = document.getElementById('postText').value;
+        const file = document.getElementById('imageInput').files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const p = document.createElement('div');
+                // إضافة زر المشاركة هنا داخل التدوينة
+                p.innerHTML = `<h3>${title}</h3><img src="${e.target.result}" style="width:100%"><p>${text}</p>
+                               <button class="share-post-btn" onclick="alert('تم نسخ رابط المقال للمشاركة')">مشاركة المقال</button><hr>`;
+                document.getElementById('posts-wrapper').appendChild(p);
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+</script>
+
+</body>
+</html>
