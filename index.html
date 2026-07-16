@@ -8,7 +8,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, fetchSignInMethodsForEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCBbeaPoAYILiVX3yGqhtdvEktZ5DIxlpY",
@@ -54,7 +54,6 @@
             }
         });
 
-        // دالة مساعدة للتحقق من حالة الموافقة
         async function checkIfUserApproved(email) {
             const q = query(collection(db, "users"), where("email", "==", email));
             const querySnapshot = await getDocs(q);
@@ -96,8 +95,8 @@
                 if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
                     alert('❌ البريد الإلكتروني أو كلمة المرور غير صحيحة');
                 } else if (error.code === 'auth/too-many-requests') {
-                    alert('⚠️ تم إيقاف الدخول مؤقتاً بسبب محاولات كثيرة.\nانتظر قليلاً وحاول مرة أخرى.');                } else {
-                    alert('خطأ في الدخول: ' + error.message);
+                    alert('⚠️ تم إيقاف الدخول مؤقتاً بسبب محاولات كثيرة.\nانتظر قليلاً وحاول مرة أخرى.');
+                } else {                    alert('خطأ في الدخول: ' + error.message);
                 }
             }
         };
@@ -117,11 +116,9 @@
             }
             
             try {
-                // التحقق مما إذا كان البريد مسجلاً مسبقاً
                 const providers = await fetchSignInMethodsForEmail(auth, email);
                 
                 if (providers.length > 0) {
-                    // البريد مسجل مسبقاً - نتحقق من حالته
                     const isApproved = await checkIfUserApproved(email);
                     
                     if (isApproved) {
@@ -134,7 +131,6 @@
                     return;
                 }
                 
-                // إنشاء حساب جديد
                 await createUserWithEmailAndPassword(auth, email, pass);
                 
                 await addDoc(collection(db, "users"), {
@@ -145,14 +141,14 @@
                 });
                 
                 await signOut(auth);
-                alert('✅ تم استلام طلب التسجيل بنجاح!\n\nحسابك قيد مراجعة الإدارة.\nسيتم تفعيله قريباً.');                switchTab('login');
+                alert('✅ تم استلام طلب التسجيل بنجاح!\n\nحسابك قيد مراجعة الإدارة.\nسيتم تفعيله قريباً.');
+                switchTab('login');
                 
             } catch (error) {
-                if (error.code === 'auth/email-already-in-use') {
-                    const isApproved = await checkIfUserApproved(email);
+                if (error.code === 'auth/email-already-in-use') {                    const isApproved = await checkIfUserApproved(email);
                     
                     if (isApproved) {
-                        alert('⚠️ هذا البريد الإلكتروني مسجل مسبقاً.\n\nيرجى تسجيل الدخول مباشرة.');
+                        alert('️ هذا البريد الإلكتروني مسجل مسبقاً.\n\nيرجى تسجيل الدخول مباشرة.');
                         switchTab('login');
                     } else {
                         alert('⏳ طلبك السابق لا يزال قيد المراجعة.\n\nسيتم تفعيل حسابك قريباً.');
@@ -182,6 +178,7 @@
                 loadPendingUsers();
                 loadApprovedUsers();
                 loadPosts();
+                loadAppointments(); // تحميل المواعيد
             } else { 
                 alert('كلمة مرور الإدارة غير صحيحة'); 
             }
@@ -194,11 +191,189 @@
         window.updateWhatsApp = () => {
             const num = document.getElementById('whatsappNumber').value;
             if (!num) {
-                alert('يرجى إدخال رقم الواتساب');                return;
+                alert('يرجى إدخال رقم الواتساب');
+                return;
             }
-            document.getElementById('whatsappLink').href = "https://wa.me/" + num;
+            document.getElementById('whatsappLink').href = "https://wa.me/" + num;            // حفظ رقم الواتساب في قاعدة البيانات
+            addDoc(collection(db, "settings"), {
+                key: "whatsapp",
+                value: num,
+                updatedAt: new Date().toISOString()
+            });
             alert("✅ تم حفظ رقم التواصل بنجاح");
         };
+
+        // ============ نظام إدارة المواعيد ============
+
+        window.bookAppointment = async () => {
+            const name = document.getElementById('appointmentName').value.trim();
+            const phone = document.getElementById('appointmentPhone').value.trim();
+            const date = document.getElementById('appointmentDate').value;
+            const notes = document.getElementById('appointmentNotes').value.trim();
+            
+            if (!name || !phone || !date) {
+                alert('⚠️ يرجى ملء جميع الحقول المطلوبة (الاسم، الجوال، التاريخ)');
+                return;
+            }
+            
+            if (phone.length < 9) {
+                alert('⚠️ رقم الجوال غير صالح');
+                return;
+            }
+            
+            try {
+                await addDoc(collection(db, "appointments"), {
+                    name: name,
+                    phone: phone,
+                    date: date,
+                    notes: notes || 'لا يوجد ملاحظات',
+                    status: 'pending', // pending, confirmed, completed, cancelled
+                    createdAt: new Date().toISOString()
+                });
+                
+                // مسح الحقول
+                document.getElementById('appointmentName').value = '';
+                document.getElementById('appointmentPhone').value = '';
+                document.getElementById('appointmentDate').value = '';
+                document.getElementById('appointmentNotes').value = '';
+                
+                alert('✅ تم إرسال طلب الحجز بنجاح!\n\nسيتواصل معك فريق العيادة قريباً لتأكيد الموعد.');
+            } catch (error) {
+                alert('خطأ في إرسال الحجز: ' + error.message);
+            }
+        };
+
+        window.loadAppointments = async () => {            const q = query(collection(db, "appointments"), orderBy("createdAt", "desc"));
+            const querySnapshot = await getDocs(q);
+            const wrapper = document.getElementById('appointments-wrapper');
+            wrapper.innerHTML = "";
+            
+            let pendingCount = 0;
+            let confirmedCount = 0;
+            let totalCount = 0;
+            
+            if (querySnapshot.empty) {
+                wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد مواعيد محجوزة حالياً.</p>";
+                document.getElementById('appointments-count').textContent = '(0 موعد)';
+                document.getElementById('pending-count').textContent = '';
+                document.getElementById('confirmed-count').textContent = '';
+                return;
+            }
+
+            querySnapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                totalCount++;
+                
+                if (data.status === 'pending') pendingCount++;
+                if (data.status === 'confirmed') confirmedCount++;
+                
+                // تحديد حالة الموعد
+                let statusBadge = '';
+                let statusClass = '';
+                switch(data.status) {
+                    case 'pending':
+                        statusBadge = '⏳ قيد الانتظار';
+                        statusClass = 'background:#fef3c7; color:#92400e;';
+                        break;
+                    case 'confirmed':
+                        statusBadge = '✅ مؤكد';
+                        statusClass = 'background:#d1fae5; color:#065f46;';
+                        break;
+                    case 'completed':
+                        statusBadge = '✔️ مكتمل';
+                        statusClass = 'background:#dbeafe; color:#1e40af;';
+                        break;
+                    case 'cancelled':
+                        statusBadge = ' ملغي';
+                        statusClass = 'background:#fee2e2; color:#991b1b;';
+                        break;
+                }
+                
+                // تنسيق التاريخ
+                const appointmentDate = new Date(data.date);
+                const formattedDate = appointmentDate.toLocaleDateString('ar-SA', {
+                    year: 'numeric',                    month: 'long',
+                    day: 'numeric'
+                });
+                
+                // زر الواتساب
+                const whatsappBtn = data.phone ? 
+                    `<button onclick="window.open('https://wa.me/${data.phone.replace(/[^0-9]/g,'')}', '_blank')" class="btn-action" style="background:#d1fae5; color:#059669;">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592z"/></svg>
+                        واتساب
+                    </button>` : '';
+                
+                wrapper.innerHTML += `
+                    <div class="appointment-card">
+                        <div class="appointment-header">
+                            <div>
+                                <strong style="font-size:16px;">${data.name}</strong>
+                                <span style="background:${statusClass} padding:3px 10px; border-radius:12px; font-size:11px; margin-right:8px;">${statusBadge}</span>
+                            </div>
+                            <span class="post-date">${formattedDate}</span>
+                        </div>
+                        <div class="appointment-details">
+                            <div>📱 الجوال: <strong>${data.phone}</strong></div>
+                            <div>📝 ملاحظات: ${data.notes}</div>
+                        </div>
+                        <div class="user-actions">
+                            <button onclick="confirmAppointment('${docSnap.id}')" class="btn-action btn-share">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/></svg>
+                                تأكيد
+                            </button>
+                            <button onclick="completeAppointment('${docSnap.id}')" class="btn-action" style="background:#dbeafe; color:#2563eb;">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/></svg>
+                                مكتمل
+                            </button>
+                            ${whatsappBtn}
+                            <button onclick="cancelAppointment('${docSnap.id}')" class="btn-action" style="background:#fef3c7; color:#92400e;">
+                                إلغاء
+                            </button>
+                            <button onclick="deleteAppointment('${docSnap.id}', '${data.name}')" class="btn-action btn-delete">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                                حذف
+                            </button>
+                        </div>
+                    </div>`;
+            });
+            
+            document.getElementById('appointments-count').textContent = `(${totalCount} موعد)`;
+            document.getElementById('pending-count').textContent = pendingCount > 0 ? `(${pendingCount} جديد)` : '';
+            document.getElementById('confirmed-count').textContent = confirmedCount > 0 ? `(${confirmedCount} مؤكد)` : '';
+        };
+        window.confirmAppointment = async (docId) => {
+            if(confirm("هل تريد تأكيد هذا الموعد؟")) {
+                await updateDoc(doc(db, "appointments", docId), { status: 'confirmed' });
+                loadAppointments();
+                alert("✅ تم تأكيد الموعد بنجاح");
+            }
+        };
+
+        window.completeAppointment = async (docId) => {
+            if(confirm("هل تم إكمال هذا الموعد؟")) {
+                await updateDoc(doc(db, "appointments", docId), { status: 'completed' });
+                loadAppointments();
+                alert("✔️ تم تسجيل الموعد كمكتمل");
+            }
+        };
+
+        window.cancelAppointment = async (docId) => {
+            if(confirm("هل تريد إلغاء هذا الموعد؟")) {
+                await updateDoc(doc(db, "appointments", docId), { status: 'cancelled' });
+                loadAppointments();
+                alert("تم إلغاء الموعد");
+            }
+        };
+
+        window.deleteAppointment = async (docId, name) => {
+            if(confirm(`هل أنت متأكد من حذف موعد:\n${name}\n\nسيتم الحذف نهائياً!`)) {
+                await deleteDoc(doc(db, "appointments", docId));
+                loadAppointments();
+                alert("تم حذف الموعد بنجاح.");
+            }
+        };
+
+        // ============ باقي الوظائف ============
 
         window.loadPendingUsers = async () => {
             const q = query(collection(db, "users"), where("isApproved", "==", false));
@@ -215,8 +390,7 @@
                 const data = docSnap.data();
                 wrapper.innerHTML += `
                     <div class="user-card">
-                        <div class="user-info">
-                            <strong>${data.email}</strong>
+                        <div class="user-info">                            <strong>${data.email}</strong>
                             <span class="post-date">تاريخ الطلب: ${data.createdAt}</span>
                         </div>
                         <div class="user-actions">
@@ -244,6 +418,7 @@
                 document.getElementById('users-count').textContent = '(0 مشترك)';
                 return;
             }
+
             let count = 0;
             querySnapshot.forEach((docSnap) => {
                 const data = docSnap.data();
@@ -264,8 +439,7 @@
                         <div class="user-actions">
                             <button onclick="upgradeUser('${docSnap.id}', '${data.email}')" class="btn-action" style="background:#dbeafe; color:#2563eb;">
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a2.5 2.5 0 0 1 2.5 2.5V4h-5v-.5A2.5 2.5 0 0 1 8 1zm3.5 3v-.5a3.5 3.5 0 1 0-7 0V4H1v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4h-3.5zM2 5h12v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5z"/></svg>
-                                ترقية
-                            </button>
+                                ترقية                            </button>
                             <button onclick="deleteApprovedUser('${docSnap.id}', '${data.email}')" class="btn-action btn-delete">
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
                                 حذف
@@ -293,6 +467,7 @@
                 alert("تم حذف طلب التسجيل.");
             }
         };
+
         window.upgradeUser = async (docId, email) => {
             const currentRole = prompt(`ترقية المستخدم: ${email}\n\nاكتب نوع الترقية:\n- اتركه فارغاً للترقية إلى "مميز" (vip)\n- أو اكتب "patient" للعودة إلى عادي`, "vip");
             
@@ -313,7 +488,6 @@
                 alert("تم حذف المستخدم بنجاح.");
             }
         };
-
         window.addPost = async () => {
             const title = document.getElementById('postTitle').value;
             const text = document.getElementById('postText').value;
@@ -341,7 +515,8 @@
         };
 
         window.loadPosts = async () => {
-            const querySnapshot = await getDocs(collection(db, "posts"));            const wrapper = document.getElementById('posts-wrapper');
+            const querySnapshot = await getDocs(collection(db, "posts"));
+            const wrapper = document.getElementById('posts-wrapper');
             wrapper.innerHTML = "";
             
             if (querySnapshot.empty) {
@@ -362,8 +537,7 @@
                         <div class="post-actions">
                             <button onclick="deleteDoc(doc(db, 'posts', '${docSnap.id}')).then(()=>loadPosts())" class="btn-action btn-delete">
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                                حذف
-                            </button>
+                                حذف                            </button>
                             <button onclick="navigator.clipboard.writeText(window.location.href); alert('تم نسخ الرابط')" class="btn-action btn-share">
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11 2.5a2.5 2.5 0 1 1 .603 1.628l-6.718 3.12a2.499 2.499 0 0 1 0 1.504l6.718 3.12a2.5 2.5 0 1 1-.488.876l-6.718-3.12a2.5 2.5 0 1 1 0-3.256l6.718-3.12A2.5 2.5 0 0 1 11 2.5z"/></svg>
                                 مشاركة
@@ -390,7 +564,8 @@
             font-family: 'Cairo', sans-serif; 
             background: linear-gradient(135deg, #e0f7fa 0%, #f0f4f8 100%); 
             margin: 0; 
-            min-height: 100vh;             display: flex; 
+            min-height: 100vh; 
+            display: flex; 
             flex-direction: column; 
             color: var(--dark);
         }
@@ -411,8 +586,7 @@
             box-shadow: var(--shadow);
         }
 
-        .admin-fullscreen {
-            min-height: 100vh;
+        .admin-fullscreen {            min-height: 100vh;
             margin: 0 auto;
             max-width: 800px;
             width: 90%;
@@ -440,6 +614,7 @@
             border-radius: 8px; cursor: pointer; transition: all 0.3s ease;
         }
         .tab-btn.active { background: var(--white); color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
         .modern-input { 
             width: 100%; padding: 14px 16px; margin: 8px 0; 
             border: 2px solid #e9ecef; border-radius: 12px; 
@@ -461,7 +636,6 @@
             color: white; box-shadow: 0 4px 15px rgba(0, 119, 182, 0.3); 
         }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0, 119, 182, 0.4); }
-
         .btn-secondary { 
             background: linear-gradient(135deg, var(--secondary) 0%, #21867a 100%); 
             color: white; box-shadow: 0 4px 15px rgba(42, 157, 143, 0.3); 
@@ -488,7 +662,8 @@
             background: var(--white); border-radius: var(--radius); 
             box-shadow: var(--shadow);
         }
-        .admin-panel-header h3 { margin: 0; color: var(--primary); }        .btn-logout { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-family: 'Cairo'; font-weight: 600; }
+        .admin-panel-header h3 { margin: 0; color: var(--primary); }
+        .btn-logout { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-family: 'Cairo'; font-weight: 600; }
         .btn-logout:hover { background: #bb2d3b; }
 
         .admin-section {
@@ -496,14 +671,24 @@
             border-radius: var(--radius); box-shadow: var(--shadow);
         }
 
-        .user-card, .post-card { 
+        .user-card, .post-card, .appointment-card { 
             background: #fafafa; border-radius: 12px; padding: 20px; 
             margin-bottom: 15px; border: 1px solid #eee; transition: transform 0.2s;
         }
-        .user-card:hover, .post-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .user-card:hover, .post-card:hover, .appointment-card:hover { 
+            transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+        }
         
         .user-info { display: flex; flex-direction: column; gap: 5px; margin-bottom: 15px; }
-        .user-actions { display: flex; gap: 10px; }
+        .user-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+        .appointment-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;        }
+        .appointment-details { 
+            background: #f0f9ff; padding: 12px; border-radius: 8px; 
+            margin-bottom: 12px; font-size: 14px; line-height: 1.8;
+        }
 
         .post-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .post-header h3 { margin: 0; color: var(--primary); font-size: 18px; }
@@ -516,7 +701,7 @@
             flex: 1; padding: 10px; border: none; border-radius: 8px; 
             font-family: 'Cairo'; font-weight: 600; cursor: pointer; 
             display: flex; align-items: center; justify-content: center; gap: 6px;
-            transition: all 0.2s;
+            transition: all 0.2s; min-width: 100px;
         }
         .btn-delete { background: #fee2e2; color: #dc2626; }
         .btn-delete:hover { background: #fecaca; }
@@ -537,10 +722,18 @@
         .btn-footer:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4); }
         
         details { 
-            background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;             margin-top: 10px; text-align: right; cursor: pointer;
+            background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; 
+            margin-top: 10px; text-align: right; cursor: pointer;
         }
         summary { font-weight: 700; outline: none; }
-    </style>
+
+        .appointment-form {
+            display: grid;
+            gap: 10px;
+        }
+        .appointment-form input, .appointment-form textarea {
+            width: 100%;
+        }    </style>
 </head>
 <body>
 
@@ -586,18 +779,29 @@
         </button>
     </div>
 
-    <button onclick="browseAsGuest()" class="btn-key btn-ghost">        <span>تصفح الموقع كزائر بدون تسجيل</span>
+    <button onclick="browseAsGuest()" class="btn-key btn-ghost">
+        <span>تصفح الموقع كزائر بدون تسجيل</span>
     </button>
 </section>
-
 <div id="admin-panel" class="admin-fullscreen hidden">
     <div class="admin-panel-header">
-        <h3>️ لوحة تحكم الإدارة</h3>
+        <h3>⚙️ لوحة تحكم الإدارة</h3>
         <button onclick="showLogin()" class="btn-logout">خروج</button>
     </div>
     
+    <!-- قسم المواعيد - جديد -->
     <div class="admin-section">
-        <label style="font-weight:700; display:block; margin-bottom:8px;">📱 رقم الواتساب للتواصل</label>
+        <h4 style="margin-top:0; color:var(--dark);">
+             إدارة المواعيد المحجوزة 
+            <span id="appointments-count" style="font-size:14px; color:#666;"></span>
+            <span id="pending-count" style="font-size:13px; color:#92400e; background:#fef3c7; padding:2px 8px; border-radius:12px; margin-right:8px;"></span>
+            <span id="confirmed-count" style="font-size:13px; color:#065f46; background:#d1fae5; padding:2px 8px; border-radius:12px; margin-right:5px;"></span>
+        </h4>
+        <div id="appointments-wrapper"></div>
+    </div>
+
+    <div class="admin-section">
+        <label style="font-weight:700; display:block; margin-bottom:8px;"> رقم الواتساب للتواصل</label>
         <div style="display:flex; gap:10px;">
             <input type="text" id="whatsappNumber" placeholder="مثال: 966500000000" class="modern-input" style="margin:0;">
             <button onclick="updateWhatsApp()" class="btn-key btn-secondary" style="width:auto; margin:0; padding:0 20px;">حفظ</button>
@@ -610,7 +814,7 @@
     </div>
 
     <div class="admin-section">
-        <h4 style="margin-top:0; color:var(--dark);">👥 المشتركين النشطين <span id="users-count" style="font-size:14px; color:#666;"></span></h4>
+        <h4 style="margin-top:0; color:var(--dark);"> المشتركين النشطين <span id="users-count" style="font-size:14px; color:#666;"></span></h4>
         <div id="approved-users-wrapper"></div>
     </div>
 
@@ -627,20 +831,26 @@
 </div>
 
 <div id="app-content" class="hidden">
-    
-    <section class="section">
+        <section class="section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-            <h2 style="color:var(--primary); margin:0;"> المدونة الطبية</h2>
+            <h2 style="color:var(--primary); margin:0;">📰 المدونة الطبية</h2>
             <button id="logout-btn" onclick="handleLogout()" class="btn-logout hidden">تسجيل الخروج</button>
         </div>
         <div id="posts-wrapper"></div>
     </section>
+
     <footer>
         <div class="footer-content">
-            <h2 style="margin-top:0;">حجز موعد استشارة</h2>
-            <input type="text" placeholder="الاسم الكامل" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
-            <input type="text" placeholder="رقم الجوال" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
-            <button onclick="alert('تم إرسال طلب الحجز بنجاح، سنتواصل معك قريباً')" class="btn-key btn-secondary">إرسال طلب الحجز</button>
+            <h2 style="margin-top:0;">📅 حجز موعد استشارة</h2>
+            
+            <!-- نموذج الحجز الجديد -->
+            <div class="appointment-form">
+                <input type="text" id="appointmentName" placeholder="الاسم الكامل *" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
+                <input type="tel" id="appointmentPhone" placeholder="رقم الجوال (مع رمز الدولة) *" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
+                <input type="date" id="appointmentDate" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
+                <textarea id="appointmentNotes" placeholder="ملاحظات إضافية (اختياري)" class="modern-input" rows="3" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2); resize:vertical;"></textarea>
+                <button onclick="bookAppointment()" class="btn-key btn-secondary">📩 إرسال طلب الحجز</button>
+            </div>
             
             <div style="margin-top:30px; text-align:right;">
                 <h3>الأسئلة الشائعة</h3>
@@ -670,8 +880,7 @@
             document.getElementById('login-form').classList.remove('hidden');
             document.getElementById('register-form').classList.add('hidden');
         } else {
-            document.querySelectorAll('.tab-btn')[1].classList.add('active');
-            document.getElementById('login-form').classList.add('hidden');
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');            document.getElementById('login-form').classList.add('hidden');
             document.getElementById('register-form').classList.remove('hidden');
         }
     }
