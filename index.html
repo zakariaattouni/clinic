@@ -23,52 +23,72 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // دوال التنقل بين الشاشات
+        // دوال مساعدة
         window.showAppContent = async () => {
-            document.getElementById('login-section').classList.add('hidden');
-            document.getElementById('admin-panel').classList.add('hidden');
-            document.getElementById('app-content').classList.remove('hidden');
-            await loadPosts(); // تحميل التدوينات عند عرض المحتوى
+            try {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('admin-panel').classList.add('hidden');
+                document.getElementById('app-content').classList.remove('hidden');
+                await loadPosts();
+            } catch (err) {
+                console.error('Error:', err);
+            }
         };
 
         window.showAdminPanel = async () => {
-            document.getElementById('login-section').classList.add('hidden');
-            document.getElementById('app-content').classList.add('hidden');
-            document.getElementById('admin-panel').classList.remove('hidden');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            loadPendingUsers();
-            loadApprovedUsers();
-            loadPosts();
-            loadAppointments();
+            try {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('app-content').classList.add('hidden');
+                document.getElementById('admin-panel').classList.remove('hidden');
+                
+                // تحميل كل شيء
+                await loadAppointments();
+                await loadPendingUsers();
+                await loadApprovedUsers();
+                await loadPosts();
+            } catch (err) {
+                console.error('Error loading admin panel:', err);                alert('خطأ في تحميل البيانات: ' + err.message);
+            }
         };
 
         window.showLogin = async () => {
-            await signOut(auth);
-            document.getElementById('login-section').classList.remove('hidden');
-            document.getElementById('app-content').classList.add('hidden');
-            document.getElementById('admin-panel').classList.add('hidden');
-            document.getElementById('userEmail').value = '';            document.getElementById('userPass').value = '';
-            document.getElementById('adminPass').value = '';
-            document.getElementById('user-status').textContent = '';
-            document.getElementById('logout-btn').classList.add('hidden');
+            try {
+                await signOut(auth);
+                document.getElementById('login-section').classList.remove('hidden');
+                document.getElementById('app-content').classList.add('hidden');
+                document.getElementById('admin-panel').classList.add('hidden');
+                document.getElementById('userEmail').value = '';
+                document.getElementById('userPass').value = '';
+                document.getElementById('adminPass').value = '';
+                document.getElementById('user-status').textContent = '';
+                document.getElementById('logout-btn').classList.add('hidden');
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
         };
 
+        // التحقق من تسجيل الدخول
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 document.getElementById('user-status').textContent = `مرحباً، ${user.email}`;
                 document.getElementById('logout-btn').classList.remove('hidden');
-                await loadPosts(); // تحميل التدوينات عند تسجيل الدخول
+                await loadPosts();
             }
         });
 
         async function checkIfUserApproved(email) {
-            const q = query(collection(db, "users"), where("email", "==", email));
-            const querySnapshot = await getDocs(q);
-            let isApproved = false;
-            querySnapshot.forEach((d) => {
-                if (d.data().isApproved) isApproved = true;
-            });
-            return isApproved;
+            try {
+                const q = query(collection(db, "users"), where("email", "==", email));
+                const querySnapshot = await getDocs(q);
+                let isApproved = false;
+                querySnapshot.forEach((d) => {
+                    if (d.data().isApproved) isApproved = true;
+                });
+                return isApproved;
+            } catch (err) {
+                console.error('Check approval error:', err);
+                return false;
+            }
         }
 
         window.handleLogin = async () => {
@@ -76,35 +96,22 @@
             const pass = document.getElementById('userPass').value;
             
             if (!email || !pass) {
-                alert('يرجى ملء جميع الحقول');
-                return;
+                alert('يرجى ملء جميع الحقول');                return;
             }
             
             try {
                 await signInWithEmailAndPassword(auth, email, pass);
-                
-                const q = query(collection(db, "users"), where("email", "==", email));
-                const querySnapshot = await getDocs(q);
-                let isApproved = false;
-                
-                querySnapshot.forEach((d) => {
-                    if (d.data().isApproved) isApproved = true;
-                });
+                const isApproved = await checkIfUserApproved(email);
 
                 if (!isApproved) {
                     await signOut(auth);
-                    alert('عذراً، حسابك لا يزال قيد مراجعة الإدارة ولم يتم تفعيله بعد.');
+                    alert('عذراً، حسابك لا يزال قيد مراجعة الإدارة.');
                     return;
                 }
-                                window.showAppContent();
+                
+                await window.showAppContent();
             } catch (error) {
-                if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-                    alert('❌ البريد الإلكتروني أو كلمة المرور غير صحيحة');
-                } else if (error.code === 'auth/too-many-requests') {
-                    alert('️ تم إيقاف الدخول مؤقتاً بسبب محاولات كثيرة.\nانتظر قليلاً وحاول مرة أخرى.');
-                } else {
-                    alert('خطأ في الدخول: ' + error.message);
-                }
+                alert('خطأ في الدخول: ' + error.message);
             }
         };
 
@@ -127,47 +134,28 @@
                 
                 if (providers.length > 0) {
                     const isApproved = await checkIfUserApproved(email);
-                    
                     if (isApproved) {
-                        alert('⚠️ هذا البريد الإلكتروني مسجل مسبقاً.\n\nيرجى تسجيل الدخول مباشرة.');
-                        switchTab('login');
+                        alert('هذا البريد مسجل مسبقاً. يرجى تسجيل الدخول.');
                     } else {
-                        alert('⏳ طلبك السابق لا يزال قيد المراجعة.\n\nسيتم تفعيل حسابك قريباً.');
-                        switchTab('login');
+                        alert('طلبك قيد المراجعة.');
                     }
+                    switchTab('login');
                     return;
                 }
                 
                 await createUserWithEmailAndPassword(auth, email, pass);
-                
                 await addDoc(collection(db, "users"), {
-                    email: email,
-                    isApproved: false,
+                    email: email,                    isApproved: false,
                     role: 'patient',
                     createdAt: new Date().toLocaleDateString('ar-SA')
-                });                
+                });
+                
                 await signOut(auth);
-                alert('✅ تم استلام طلب التسجيل بنجاح!\n\nحسابك قيد مراجعة الإدارة.\nسيتم تفعيله قريباً.');
+                alert('✅ تم إرسال طلب التسجيل بنجاح!');
                 switchTab('login');
                 
             } catch (error) {
-                if (error.code === 'auth/email-already-in-use') {
-                    const isApproved = await checkIfUserApproved(email);
-                    
-                    if (isApproved) {
-                        alert('️ هذا البريد الإلكتروني مسجل مسبقاً.\n\nيرجى تسجيل الدخول مباشرة.');
-                        switchTab('login');
-                    } else {
-                        alert('⏳ طلبك السابق لا يزال قيد المراجعة.\n\nسيتم تفعيل حسابك قريباً.');
-                        switchTab('login');
-                    }
-                } else if (error.code === 'auth/weak-password') {
-                    alert('❌ كلمة المرور ضعيفة جداً.\nيجب أن تكون 6 أحرف على الأقل.');
-                } else if (error.code === 'auth/invalid-email') {
-                    alert('❌ البريد الإلكتروني غير صالح.');
-                } else {
-                    alert('خطأ في التسجيل: ' + error.message);
-                }
+                alert('خطأ: ' + error.message);
             }
         };
 
@@ -191,22 +179,7 @@
             await window.showAppContent();
         };
 
-        window.updateWhatsApp = () => {
-            const num = document.getElementById('whatsappNumber').value;
-            if (!num) {
-                alert('يرجى إدخال رقم الواتساب');                return;
-            }
-            document.getElementById('whatsappLink').href = "https://wa.me/" + num;
-            addDoc(collection(db, "settings"), {
-                key: "whatsapp",
-                value: num,
-                updatedAt: new Date().toISOString()
-            });
-            alert("✅ تم حفظ رقم التواصل بنجاح");
-        };
-
-        // ============ نظام إدارة المواعيد ============
-
+        // ========== المواعيد ==========
         window.bookAppointment = async () => {
             const name = document.getElementById('appointmentName').value.trim();
             const phone = document.getElementById('appointmentPhone').value.trim();
@@ -214,21 +187,15 @@
             const notes = document.getElementById('appointmentNotes').value.trim();
             
             if (!name || !phone || !date) {
-                alert('⚠️ يرجى ملء جميع الحقول المطلوبة (الاسم، الجوال، التاريخ)');
-                return;
-            }
-            
-            if (phone.length < 9) {
-                alert('⚠️ رقم الجوال غير صالح');
+                alert('يرجى ملء الحقول المطلوبة');
                 return;
             }
             
             try {
                 await addDoc(collection(db, "appointments"), {
                     name: name,
-                    phone: phone,
-                    date: date,
-                    notes: notes || 'لا يوجد ملاحظات',
+                    phone: phone,                    date: date,
+                    notes: notes || 'لا يوجد',
                     status: 'pending',
                     createdAt: new Date().toISOString()
                 });
@@ -238,280 +205,192 @@
                 document.getElementById('appointmentDate').value = '';
                 document.getElementById('appointmentNotes').value = '';
                 
-                alert('✅ تم إرسال طلب الحجز بنجاح!\n\nسيتواصل معك فريق العيادة قريباً لتأكيد الموعد.');
+                alert('✅ تم إرسال طلب الحجز بنجاح!');
             } catch (error) {
-                alert('خطأ في إرسال الحجز: ' + error.message);
+                alert('خطأ: ' + error.message);
             }
         };
-        window.loadAppointments = async () => {
-            const q = query(collection(db, "appointments"), orderBy("createdAt", "desc"));
-            const querySnapshot = await getDocs(q);
-            const wrapper = document.getElementById('appointments-wrapper');
-            wrapper.innerHTML = "";
-            
-            let pendingCount = 0;
-            let confirmedCount = 0;
-            let totalCount = 0;
-            
-            if (querySnapshot.empty) {
-                wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد مواعيد محجوزة حالياً.</p>";
-                document.getElementById('appointments-count').textContent = '(0 موعد)';
-                document.getElementById('pending-count').textContent = '';
-                document.getElementById('confirmed-count').textContent = '';
-                return;
-            }
 
-            querySnapshot.forEach((docSnap) => {
-                const data = docSnap.data();
-                totalCount++;
+        window.loadAppointments = async () => {
+            try {
+                const wrapper = document.getElementById('appointments-wrapper');
+                wrapper.innerHTML = "<p>جاري التحميل...</p>";
                 
-                if (data.status === 'pending') pendingCount++;
-                if (data.status === 'confirmed') confirmedCount++;
+                const q = query(collection(db, "appointments"), orderBy("createdAt", "desc"));
+                const querySnapshot = await getDocs(q);
                 
-                let statusBadge = '';
-                let statusClass = '';
-                switch(data.status) {
-                    case 'pending':
-                        statusBadge = '⏳ قيد الانتظار';
-                        statusClass = 'background:#fef3c7; color:#92400e;';
-                        break;
-                    case 'confirmed':
-                        statusBadge = '✅ مؤكد';
-                        statusClass = 'background:#d1fae5; color:#065f46;';
-                        break;
-                    case 'completed':
-                        statusBadge = '✔️ مكتمل';
-                        statusClass = 'background:#dbeafe; color:#1e40af;';
-                        break;
-                    case 'cancelled':
-                        statusBadge = '❌ ملغي';
-                        statusClass = 'background:#fee2e2; color:#991b1b;';
-                        break;
+                console.log('عدد المواعيد:', querySnapshot.size);
+                wrapper.innerHTML = "";
+                
+                let pendingCount = 0;
+                let totalCount = 0;
+                
+                if (querySnapshot.empty) {
+                    wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد مواعيد</p>";
+                    document.getElementById('appointments-count').textContent = '(0)';
+                    return;
                 }
-                
-                const appointmentDate = new Date(data.date);
-                const formattedDate = appointmentDate.toLocaleDateString('ar-SA', {
-                    year: 'numeric',
-                    month: 'long',                    day: 'numeric'
+
+                querySnapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    totalCount++;
+                    if (data.status === 'pending') pendingCount++;
+                    
+                    const statusColors = {
+                        'pending': 'background:#fef3c7; color:#92400e;',
+                        'confirmed': 'background:#d1fae5; color:#065f46;',
+                        'completed': 'background:#dbeafe; color:#1e40af;',
+                        'cancelled': 'background:#fee2e2; color:#991b1b;'
+                    };
+                    
+                    const statusText = {                        'pending': '⏳ انتظار',
+                        'confirmed': '✅ مؤكد',
+                        'completed': '✔️ مكتمل',
+                        'cancelled': '❌ ملغي'
+                    };
+                    
+                    wrapper.innerHTML += `
+                        <div class="appointment-card">
+                            <div class="appointment-header">
+                                <div>
+                                    <strong>${data.name}</strong>
+                                    <span style="background:${statusColors[data.status]}; padding:3px 10px; border-radius:12px; font-size:11px; margin-right:8px;">${statusText[data.status]}</span>
+                                </div>
+                                <span class="post-date">${data.date}</span>
+                            </div>
+                            <div style="font-size:14px; margin-bottom:10px;">📱 ${data.phone}</div>
+                            <div class="user-actions">
+                                <button onclick="updateStatus('${docSnap.id}', 'confirmed')" class="btn-action btn-share">تأكيد</button>
+                                <button onclick="updateStatus('${docSnap.id}', 'completed')" class="btn-action" style="background:#dbeafe; color:#2563eb;">مكتمل</button>
+                                <button onclick="updateStatus('${docSnap.id}', 'cancelled')" class="btn-action" style="background:#fef3c7; color:#92400e;">إلغاء</button>
+                                <button onclick="deleteDoc(doc(db, 'appointments', '${docSnap.id}')).then(loadAppointments)" class="btn-action btn-delete">حذف</button>
+                            </div>
+                        </div>`;
                 });
                 
-                const whatsappBtn = data.phone ? 
-                    `<button onclick="window.open('https://wa.me/${data.phone.replace(/[^0-9]/g,'')}', '_blank')" class="btn-action" style="background:#d1fae5; color:#059669;">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592z"/></svg>
-                        واتساب
-                    </button>` : '';
-                
-                wrapper.innerHTML += `
-                    <div class="appointment-card">
-                        <div class="appointment-header">
-                            <div>
-                                <strong style="font-size:16px;">${data.name}</strong>
-                                <span style="background:${statusClass} padding:3px 10px; border-radius:12px; font-size:11px; margin-right:8px;">${statusBadge}</span>
-                            </div>
-                            <span class="post-date">${formattedDate}</span>
-                        </div>
-                        <div class="appointment-details">
-                            <div>📱 الجوال: <strong>${data.phone}</strong></div>
-                            <div>📝 ملاحظات: ${data.notes}</div>
-                        </div>
-                        <div class="user-actions">
-                            <button onclick="confirmAppointment('${docSnap.id}')" class="btn-action btn-share">
-                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/></svg>
-                                تأكيد
-                            </button>
-                            <button onclick="completeAppointment('${docSnap.id}')" class="btn-action" style="background:#dbeafe; color:#2563eb;">
-                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/></svg>
-                                مكتمل
-                            </button>
-                            ${whatsappBtn}
-                            <button onclick="cancelAppointment('${docSnap.id}')" class="btn-action" style="background:#fef3c7; color:#92400e;">
-                                إلغاء
-                            </button>
-                            <button onclick="deleteAppointment('${docSnap.id}', '${data.name}')" class="btn-action btn-delete">
-                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                                حذف
-                            </button>
-                        </div>
-                    </div>`;
-            });
-            
-            document.getElementById('appointments-count').textContent = `(${totalCount} موعد)`;
-            document.getElementById('pending-count').textContent = pendingCount > 0 ? `(${pendingCount} جديد)` : '';
-            document.getElementById('confirmed-count').textContent = confirmedCount > 0 ? `(${confirmedCount} مؤكد)` : '';
-        };
-
-        window.confirmAppointment = async (docId) => {
-            if(confirm("هل تريد تأكيد هذا الموعد؟")) {                await updateDoc(doc(db, "appointments", docId), { status: 'confirmed' });
-                loadAppointments();
-                alert("✅ تم تأكيد الموعد بنجاح");
+                document.getElementById('appointments-count').textContent = `(${totalCount})`;
+                document.getElementById('pending-count').textContent = pendingCount > 0 ? `(${pendingCount} جديد)` : '';
+            } catch (err) {
+                console.error('Load appointments error:', err);
+                document.getElementById('appointments-wrapper').innerHTML = 
+                    `<p style='color:red'>خطأ: ${err.message}</p>`;
             }
         };
 
-        window.completeAppointment = async (docId) => {
-            if(confirm("هل تم إكمال هذا الموعد؟")) {
-                await updateDoc(doc(db, "appointments", docId), { status: 'completed' });
-                loadAppointments();
-                alert("✔️ تم تسجيل الموعد كمكتمل");
+        window.updateStatus = async (docId, status) => {
+            try {
+                await updateDoc(doc(db, "appointments", docId), { status });
+                await loadAppointments();
+                alert('تم التحديث');
+            } catch (err) {
+                alert('خطأ: ' + err.message);
             }
         };
 
-        window.cancelAppointment = async (docId) => {
-            if(confirm("هل تريد إلغاء هذا الموعد؟")) {
-                await updateDoc(doc(db, "appointments", docId), { status: 'cancelled' });
-                loadAppointments();
-                alert("تم إلغاء الموعد");
-            }
-        };
-
-        window.deleteAppointment = async (docId, name) => {
-            if(confirm(`هل أنت متأكد من حذف موعد:\n${name}\n\nسيتم الحذف نهائياً!`)) {
-                await deleteDoc(doc(db, "appointments", docId));
-                loadAppointments();
-                alert("تم حذف الموعد بنجاح.");
-            }
-        };
-
-        // ============ باقي الوظائف ============
-
+        // ========== المستخدمين ==========
         window.loadPendingUsers = async () => {
-            const q = query(collection(db, "users"), where("isApproved", "==", false));
-            const querySnapshot = await getDocs(q);
-            const wrapper = document.getElementById('pending-users-wrapper');
-            wrapper.innerHTML = "";
-            
-            if (querySnapshot.empty) {
-                wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد طلبات تسجيل معلقة حالياً.</p>";
-                return;
-            }
+            try {
+                const q = query(collection(db, "users"), where("isApproved", "==", false));
+                const querySnapshot = await getDocs(q);
+                const wrapper = document.getElementById('pending-users-wrapper');                wrapper.innerHTML = "";
+                
+                console.log('الطلبات المعلقة:', querySnapshot.size);
+                
+                if (querySnapshot.empty) {
+                    wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد طلبات معلقة</p>";
+                    return;
+                }
 
-            querySnapshot.forEach((docSnap) => {
-                const data = docSnap.data();
-                wrapper.innerHTML += `
-                    <div class="user-card">
-                        <div class="user-info">
-                            <strong>${data.email}</strong>
-                            <span class="post-date">تاريخ الطلب: ${data.createdAt}</span>                        </div>
-                        <div class="user-actions">
-                            <button onclick="approveUser('${docSnap.id}')" class="btn-action btn-share">
-                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/></svg>
-                                قبول
-                            </button>
-                            <button onclick="rejectUser('${docSnap.id}')" class="btn-action btn-delete">
-                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                                حذف
-                            </button>
-                        </div>
-                    </div>`;
-            });
+                querySnapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    wrapper.innerHTML += `
+                        <div class="user-card">
+                            <div class="user-info"><strong>${data.email}</strong></div>
+                            <div class="user-actions">
+                                <button onclick="approveUser('${docSnap.id}')" class="btn-action btn-share">قبول</button>
+                                <button onclick="deleteDoc(doc(db, 'users', '${docSnap.id}')).then(loadPendingUsers)" class="btn-action btn-delete">حذف</button>
+                            </div>
+                        </div>`;
+                });
+            } catch (err) {
+                console.error('Load pending users error:', err);
+            }
         };
 
         window.loadApprovedUsers = async () => {
-            const q = query(collection(db, "users"), where("isApproved", "==", true));
-            const querySnapshot = await getDocs(q);
-            const wrapper = document.getElementById('approved-users-wrapper');
-            wrapper.innerHTML = "";
-            
-            if (querySnapshot.empty) {
-                wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا يوجد مشتركين مسجلين حالياً.</p>";
-                document.getElementById('users-count').textContent = '(0 مشترك)';
-                return;
-            }
-
-            let count = 0;
-            querySnapshot.forEach((docSnap) => {
-                const data = docSnap.data();
-                count++;
-                const roleBadge = data.role === 'vip' ? 
-                    '<span style="background:#ffd700; color:#000; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">مميز</span>' : 
-                    '<span style="background:#d1fae5; color:#059669; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">عادي</span>';
+            try {
+                const q = query(collection(db, "users"), where("isApproved", "==", true));
+                const querySnapshot = await getDocs(q);
+                const wrapper = document.getElementById('approved-users-wrapper');
+                wrapper.innerHTML = "";
                 
-                wrapper.innerHTML += `
-                    <div class="user-card">
-                        <div class="user-info">
-                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:5px;">
-                                <strong>${data.email}</strong>
-                                ${roleBadge}
-                            </div>
-                            <span class="post-date">تاريخ التسجيل: ${data.createdAt}</span>
-                        </div>
-                        <div class="user-actions">
-                            <button onclick="upgradeUser('${docSnap.id}', '${data.email}')" class="btn-action" style="background:#dbeafe; color:#2563eb;">
-                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a2.5 2.5 0 0 1 2.5 2.5V4h-5v-.5A2.5 2.5 0 0 1 8 1zm3.5 3v-.5a3.5 3.5 0 1 0-7 0V4H1v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4h-3.5zM2 5h12v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5z"/></svg>
-                                ترقية
-                            </button>
-                            <button onclick="deleteApprovedUser('${docSnap.id}', '${data.email}')" class="btn-action btn-delete">                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                                حذف
-                            </button>
-                        </div>
-                    </div>`;
-            });
-            
-            document.getElementById('users-count').textContent = `(${count} مشترك)`;
+                console.log('المستخدمون المقبولون:', querySnapshot.size);
+                
+                if (querySnapshot.empty) {
+                    wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا يوجد مشتركين</p>";
+                    document.getElementById('users-count').textContent = '(0)';
+                    return;
+                }
+
+                let count = 0;
+                querySnapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    count++;
+                    wrapper.innerHTML += `
+                        <div class="user-card">
+                            <div class="user-info"><strong>${data.email}</strong></div>
+                            <div class="user-actions">
+                                <button onclick="deleteDoc(doc(db, 'users', '${docSnap.id}')).then(loadApprovedUsers)" class="btn-action btn-delete">حذف</button>
+                            </div>                        </div>`;
+                });
+                
+                document.getElementById('users-count').textContent = `(${count})`;
+            } catch (err) {
+                console.error('Load approved users error:', err);
+            }
         };
 
         window.approveUser = async (docId) => {
-            if(confirm("هل أنت متأكد من قبول هذا المستخدم وتفعيل حسابه؟")) {
+            try {
                 await updateDoc(doc(db, "users", docId), { isApproved: true });
-                loadPendingUsers();
-                loadApprovedUsers();
-                alert("✅ تم قبول المستخدم وتفعيل حسابه بنجاح.");
+                await loadPendingUsers();
+                await loadApprovedUsers();
+                alert('✅ تم القبول');
+            } catch (err) {
+                alert('خطأ: ' + err.message);
             }
         };
 
-        window.rejectUser = async (docId) => {
-            if(confirm("هل أنت متأكد من حذف هذا الطلب؟")) {
-                await deleteDoc(doc(db, "users", docId));
-                loadPendingUsers();
-                alert("تم حذف طلب التسجيل.");
-            }
-        };
-
-        window.upgradeUser = async (docId, email) => {
-            const currentRole = prompt(`ترقية المستخدم: ${email}\n\nاكتب نوع الترقية:\n- اتركه فارغاً للترقية إلى "مميز" (vip)\n- أو اكتب "patient" للعودة إلى عادي`, "vip");
-            
-            if (currentRole === null) return;
-            
-            const newRole = currentRole.trim() === "" ? "vip" : "patient";
-            const roleName = newRole === "vip" ? "مميز" : "عادي";
-            
-            await updateDoc(doc(db, "users", docId), { role: newRole });
-            loadApprovedUsers();
-            alert(`تم تغيير حالة المستخدم إلى: ${roleName}`);
-        };
-
-        window.deleteApprovedUser = async (docId, email) => {
-            if(confirm(`هل أنت متأكد من حذف المستخدم:\n${email}\n\nسيتم حذف الحساب نهائياً!`)) {
-                await deleteDoc(doc(db, "users", docId));
-                loadApprovedUsers();
-                alert("تم حذف المستخدم بنجاح.");
-            }
-        };
-
+        // ========== التدوينات ==========
         window.addPost = async () => {
-            const title = document.getElementById('postTitle').value;            const text = document.getElementById('postText').value;
+            const title = document.getElementById('postTitle').value;
+            const text = document.getElementById('postText').value;
             const file = document.getElementById('imageInput').files[0];
             
-            if (!file) {
-                alert('يرجى اختيار صورة');
+            if (!file || !title) {
+                alert('يرجى اختيار صورة وعنوان');
                 return;
             }
 
             const reader = new FileReader();
             reader.onload = async (e) => {
-                await addDoc(collection(db, "posts"), { 
-                    title, 
-                    text, 
-                    img: e.target.result,
-                    date: new Date().toLocaleDateString('ar-SA')
-                });
-                document.getElementById('postTitle').value = '';
-                document.getElementById('postText').value = '';
-                document.getElementById('imageInput').value = '';
-                alert('✅ تم نشر التدوينة بنجاح');
-                await loadPosts(); // إعادة تحميل التدوينات بعد النشر
+                try {
+                    await addDoc(collection(db, "posts"), { 
+                        title, 
+                        text, 
+                        img: e.target.result,
+                        date: new Date().toLocaleDateString('ar-SA')
+                    });
+                    document.getElementById('postTitle').value = '';
+                    document.getElementById('postText').value = '';
+                    document.getElementById('imageInput').value = '';
+                    alert('✅ تم النشر');
+                    await loadPosts();
+                } catch (err) {
+                    alert('خطأ: ' + err.message);
+                }
             };
-            reader.readAsDataURL(file);
-        };
+            reader.readAsDataURL(file);        };
 
         window.loadPosts = async () => {
             try {
@@ -522,47 +401,47 @@
                 console.log('عدد التدوينات:', querySnapshot.size);
                 
                 if (querySnapshot.empty) {
-                    wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:40px;'>📭 لا توجد تدوينات حالياً</p>";
+                    wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:40px;'>لا توجد تدوينات</p>";
                     return;
                 }
 
                 querySnapshot.forEach((docSnap) => {
                     const data = docSnap.data();
-                    console.log('تدوينة:', data.title);
                     wrapper.innerHTML += `
                         <div class="post-card">
                             <div class="post-header">
                                 <h3>${data.title}</h3>
-                                <span class="post-date">${data.date || ''}</span>
+                                <span class="post-date">${data.date}</span>
                             </div>
-                            <img src="${data.img}" alt="صورة التدوينة" class="post-image">
-                            <p class="post-text">${data.text}</p>
-                            <div class="post-actions">                                <button onclick="deleteDoc(doc(db, 'posts', '${docSnap.id}')).then(()=>loadPosts())" class="btn-action btn-delete">
-                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                                    حذف
-                                </button>
-                                <button onclick="navigator.clipboard.writeText(window.location.href); alert('تم نسخ الرابط')" class="btn-action btn-share">
-                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11 2.5a2.5 2.5 0 1 1 .603 1.628l-6.718 3.12a2.499 2.499 0 0 1 0 1.504l6.718 3.12a2.5 2.5 0 1 1-.488.876l-6.718-3.12a2.5 2.5 0 1 1 0-3.256l6.718-3.12A2.5 2.5 0 0 1 11 2.5z"/></svg>
-                                    مشاركة
-                                </button>
+                            <img src="${data.img}" style="width:100%; border-radius:8px; margin-bottom:12px;">
+                            <p>${data.text}</p>
+                            <div class="post-actions">
+                                <button onclick="deleteDoc(doc(db, 'posts', '${docSnap.id}')).then(loadPosts)" class="btn-action btn-delete">حذف</button>
                             </div>
                         </div>`;
                 });
-            } catch (error) {
-                console.error('خطأ في تحميل التدوينات:', error);
+            } catch (err) {
+                console.error('Load posts error:', err);
                 document.getElementById('posts-wrapper').innerHTML = 
-                    `<p style='text-align:center; color:#dc2626; padding:40px;'> خطأ في تحميل التدوينات: ${error.message}</p>`;
+                    `<p style='color:red'>خطأ: ${err.message}</p>`;
             }
+        };
+
+        window.updateWhatsApp = () => {
+            const num = document.getElementById('whatsappNumber').value;
+            if (!num) {
+                alert('يرجى إدخال الرقم');
+                return;
+            }
+            document.getElementById('whatsappLink').href = "https://wa.me/" + num;
+            alert("✅ تم الحفظ");
         };
     </script>
     <style>
         :root {
-            --primary: #0077b6;
-            --primary-light: #00b4d8;
-            --secondary: #2a9d8f;
+            --primary: #0077b6;            --secondary: #2a9d8f;
             --dark: #264653;
             --white: #ffffff;
-            --shadow: 0 8px 32px rgba(0, 119, 182, 0.1);
             --radius: 16px;
         }
 
@@ -586,11 +465,12 @@
             flex-direction: column;
             justify-content: center;
             margin: 0 auto;
-            max-width: 450px;             width: 90%;
+            max-width: 450px; 
+            width: 90%;
             background: var(--white); 
             padding: 40px 30px; 
             border-radius: var(--radius); 
-            box-shadow: var(--shadow);
+            box-shadow: 0 8px 32px rgba(0, 119, 182, 0.1);
         }
 
         .admin-fullscreen {
@@ -608,113 +488,68 @@
             max-width: 800px; 
             width: 90%; 
             border-radius: var(--radius); 
-            box-shadow: var(--shadow);
-        }
+            box-shadow: 0 8px 32px rgba(0, 119, 182, 0.1);        }
 
         .login-header { text-align: center; margin-bottom: 25px; }
-        .login-header h2 { color: var(--primary); margin: 0 0 8px 0; font-weight: 800; }
-        .login-header p { color: #666; margin: 0; font-size: 14px; }
+        .login-header h2 { color: var(--primary); margin: 0 0 8px 0; }
 
         .auth-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: #f8f9fa; padding: 5px; border-radius: 12px; }
         .tab-btn { 
             flex: 1; padding: 10px; border: none; background: transparent; 
             font-family: 'Cairo', sans-serif; font-weight: 700; color: #666; 
-            border-radius: 8px; cursor: pointer; transition: all 0.3s ease;
+            border-radius: 8px; cursor: pointer;
         }
-        .tab-btn.active { background: var(--white); color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .tab-btn.active { background: var(--white); color: var(--primary); }
 
         .modern-input { 
-            width: 100%; padding: 14px 16px; margin: 8px 0; 
+            width: 100%; padding: 14px; margin: 8px 0; 
             border: 2px solid #e9ecef; border-radius: 12px; 
-            font-family: 'Cairo', sans-serif; font-size: 15px;
-            transition: all 0.3s ease; outline: none;
+            font-family: 'Cairo', sans-serif;
         }
-        .modern-input:focus { border-color: var(--primary-light); box-shadow: 0 0 0 4px rgba(0, 180, 216, 0.1); }
 
         .btn-key { 
             width: 100%; padding: 14px; border: none; border-radius: 12px; 
-            font-family: 'Cairo', sans-serif; font-weight: 700; font-size: 16px; 
-            cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
-            display: flex; align-items: center; justify-content: center; gap: 10px;            margin-top: 10px;
+            font-family: 'Cairo', sans-serif; font-weight: 700; 
+            cursor: pointer; margin-top: 10px;
         }
         
-        .btn-primary { 
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); 
-            color: white; box-shadow: 0 4px 15px rgba(0, 119, 182, 0.3); 
-        }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0, 119, 182, 0.4); }
-
-        .btn-secondary { 
-            background: linear-gradient(135deg, var(--secondary) 0%, #21867a 100%); 
-            color: white; box-shadow: 0 4px 15px rgba(42, 157, 143, 0.3); 
-        }
-        .btn-secondary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(42, 157, 143, 0.4); }
-
-        .btn-ghost {
-            background: transparent; color: #666; border: 1px dashed #ccc; margin-top: 15px;
-        }
-        .btn-ghost:hover { background: #f8f9fa; color: var(--dark); border-color: #999; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-secondary { background: var(--secondary); color: white; }
+        .btn-admin { background: #f8f9fa; color: var(--dark); border: 2px solid #e9ecef; }
+        .btn-ghost { background: transparent; color: #666; border: 1px dashed #ccc; }
 
         .admin-divider { text-align: center; margin: 25px 0 15px; position: relative; }
         .admin-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e9ecef; }
-        .admin-divider span { background: var(--white); padding: 0 15px; position: relative; color: #999; font-size: 13px; }
-
-        .btn-admin { 
-            background: #f8f9fa; color: var(--dark); border: 2px solid #e9ecef; 
-        }
-        .btn-admin:hover { background: #e9ecef; border-color: #dee2e6; transform: translateY(-1px); }
+        .admin-divider span { background: var(--white); padding: 0 15px; position: relative; color: #999; }
 
         .admin-panel-header { 
             display: flex; justify-content: space-between; align-items: center; 
-            margin-bottom: 20px; padding: 20px; 
-            background: var(--white); border-radius: var(--radius); 
-            box-shadow: var(--shadow);
+            margin-bottom: 20px; padding: 20px; background: var(--white); 
+            border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0, 119, 182, 0.1);
         }
-        .admin-panel-header h3 { margin: 0; color: var(--primary); }
-        .btn-logout { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-family: 'Cairo'; font-weight: 600; }
-        .btn-logout:hover { background: #bb2d3b; }
+        .btn-logout { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
 
         .admin-section {
             background: var(--white); padding: 25px; margin-bottom: 20px;
-            border-radius: var(--radius); box-shadow: var(--shadow);
+            border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0, 119, 182, 0.1);
         }
 
         .user-card, .post-card, .appointment-card { 
             background: #fafafa; border-radius: 12px; padding: 20px; 
-            margin-bottom: 15px; border: 1px solid #eee; transition: transform 0.2s;
-        }
-        .user-card:hover, .post-card:hover, .appointment-card:hover { 
-            transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.05);         }
-        
-        .user-info { display: flex; flex-direction: column; gap: 5px; margin-bottom: 15px; }
-        .user-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-
-        .appointment-header { 
-            display: flex; justify-content: space-between; align-items: center; 
-            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
-        }
-        .appointment-details { 
-            background: #f0f9ff; padding: 12px; border-radius: 8px; 
-            margin-bottom: 12px; font-size: 14px; line-height: 1.8;
-        }
-
-        .post-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .post-header h3 { margin: 0; color: var(--primary); font-size: 18px; }
-        .post-date { font-size: 12px; color: #999; }
-        .post-image { width: 100%; border-radius: 8px; margin-bottom: 12px; object-fit: cover; max-height: 300px; }
-        .post-text { color: #555; line-height: 1.6; margin-bottom: 15px; }
-        .post-actions { display: flex; gap: 10px; }
-        
+            margin-bottom: 15px; border: 1px solid #eee;
+        }        
+        .user-actions { display: flex; gap: 10px; margin-top: 10px; }
         .btn-action { 
             flex: 1; padding: 10px; border: none; border-radius: 8px; 
-            font-family: 'Cairo'; font-weight: 600; cursor: pointer; 
-            display: flex; align-items: center; justify-content: center; gap: 6px;
-            transition: all 0.2s; min-width: 100px;
+            font-family: 'Cairo'; cursor: pointer;
         }
         .btn-delete { background: #fee2e2; color: #dc2626; }
-        .btn-delete:hover { background: #fecaca; }
         .btn-share { background: #d1fae5; color: #059669; }
-        .btn-share:hover { background: #a7f3d0; }
+
+        .appointment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .post-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .post-header h3 { margin: 0; color: var(--primary); }
+        .post-date { font-size: 12px; color: #999; }
 
         footer { 
             background: var(--dark); color: white; padding: 40px 20px; 
@@ -724,22 +559,16 @@
         .btn-footer { 
             display: inline-block; background: #25D366; color: white; 
             padding: 12px 24px; border-radius: 50px; text-decoration: none; 
-            font-weight: 700; margin-top: 15px; transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+            margin-top: 15px;
         }
-        .btn-footer:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4); }
         
-        details { 
-            background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; 
-            margin-top: 10px; text-align: right; cursor: pointer;
-        }
-        summary { font-weight: 700; outline: none; }
-        .appointment-form {
-            display: grid;
-            gap: 10px;
-        }
+        .appointment-form { display: grid; gap: 10px; margin-bottom: 20px; }
         .appointment-form input, .appointment-form textarea {
-            width: 100%;
+            width: 100%; padding: 14px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1); color: white; font-family: 'Cairo';
+        }
+        .appointment-form input::placeholder, .appointment-form textarea::placeholder {
+            color: rgba(255,255,255,0.7);
         }
     </style>
 </head>
@@ -748,7 +577,7 @@
 <section id="login-section" class="login-fullscreen">
     <div class="login-header">
         <h2>المنصة الطبية التخصصية</h2>
-        <p>مرحباً بك، يرجى اختيار نوع الدخول المناسب</p>
+        <p>مرحباً بك</p>
     </div>
     
     <div class="auth-tabs">
@@ -756,39 +585,26 @@
         <button class="tab-btn" onclick="switchTab('register')">حساب جديد</button>
     </div>
 
-    <div id="login-form" class="auth-form">
-        <input type="email" id="userEmail" placeholder="البريد الإلكتروني" class="modern-input">
-        <input type="password" id="userPass" placeholder="كلمة المرور" class="modern-input">
-        <button onclick="handleLogin()" class="btn-key btn-primary">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
-            <span>دخول المريض</span>
-        </button>
-        <p id="user-status" style="text-align:center; margin-top:10px; color:var(--secondary); font-weight:600;"></p>
+    <div id="login-form">
+        <input type="email" id="userEmail" placeholder="البريد الإلكتروني" class="modern-input">        <input type="password" id="userPass" placeholder="كلمة المرور" class="modern-input">
+        <button onclick="handleLogin()" class="btn-key btn-primary">دخول المريض</button>
+        <p id="user-status" style="text-align:center; margin-top:10px; color:var(--secondary);"></p>
     </div>
 
-    <div id="register-form" class="auth-form hidden">
+    <div id="register-form" class="hidden">
         <input type="email" id="newUserEmail" placeholder="البريد الإلكتروني" class="modern-input">
-        <input type="password" id="newUserPass" placeholder="كلمة المرور (6 أحرف على الأقل)" class="modern-input">
-        <button onclick="handleRegister()" class="btn-key btn-secondary">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
-            <span>إرسال طلب تسجيل جديد</span>
-        </button>
+        <input type="password" id="newUserPass" placeholder="كلمة المرور (6 أحرف)" class="modern-input">
+        <button onclick="handleRegister()" class="btn-key btn-secondary">إرسال طلب تسجيل</button>
     </div>
 
-    <div class="admin-divider">
-        <span>منطقة الإدارة</span>
-    </div>
+    <div class="admin-divider"><span>منطقة الإدارة</span></div>
 
     <div class="admin-access">
         <input type="password" id="adminPass" placeholder="كلمة مرور الإدارة" class="modern-input">
-        <button onclick="adminAccess()" class="btn-key btn-admin">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>            <span>دخول الإدارة</span>
-        </button>
+        <button onclick="adminAccess()" class="btn-key btn-admin">دخول الإدارة</button>
     </div>
 
-    <button onclick="browseAsGuest()" class="btn-key btn-ghost">
-        <span>تصفح الموقع كزائر بدون تسجيل</span>
-    </button>
+    <button onclick="browseAsGuest()" class="btn-key btn-ghost">تصفح كزائر</button>
 </section>
 
 <div id="admin-panel" class="admin-fullscreen hidden">
@@ -798,46 +614,37 @@
     </div>
     
     <div class="admin-section">
-        <h4 style="margin-top:0; color:var(--dark);">
-            📅 إدارة المواعيد المحجوزة 
-            <span id="appointments-count" style="font-size:14px; color:#666;"></span>
-            <span id="pending-count" style="font-size:13px; color:#92400e; background:#fef3c7; padding:2px 8px; border-radius:12px; margin-right:8px;"></span>
-            <span id="confirmed-count" style="font-size:13px; color:#065f46; background:#d1fae5; padding:2px 8px; border-radius:12px; margin-right:5px;"></span>
-        </h4>
+        <h4>📅 المواعيد <span id="appointments-count"></span> <span id="pending-count"></span></h4>
         <div id="appointments-wrapper"></div>
     </div>
 
     <div class="admin-section">
-        <label style="font-weight:700; display:block; margin-bottom:8px;">📱 رقم الواتساب للتواصل</label>
-        <div style="display:flex; gap:10px;">
-            <input type="text" id="whatsappNumber" placeholder="مثال: 966500000000" class="modern-input" style="margin:0;">
+        <label>📱 رقم الواتساب</label>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <input type="text" id="whatsappNumber" placeholder="966500000000" class="modern-input" style="margin:0;">
             <button onclick="updateWhatsApp()" class="btn-key btn-secondary" style="width:auto; margin:0; padding:0 20px;">حفظ</button>
         </div>
     </div>
 
     <div class="admin-section">
-        <h4 style="margin-top:0; color:var(--dark);"> الطلبات المعلقة <span style="font-size:14px; color:#666;">(بانتظار الموافقة)</span></h4>
+        <h4>⏳ الطلبات المعلقة</h4>
         <div id="pending-users-wrapper"></div>
     </div>
 
     <div class="admin-section">
-        <h4 style="margin-top:0; color:var(--dark);"> المشتركين النشطين <span id="users-count" style="font-size:14px; color:#666;"></span></h4>
+        <h4>👥 المشتركين <span id="users-count"></span></h4>
         <div id="approved-users-wrapper"></div>
     </div>
-
     <div class="admin-section">
-        <h4 style="margin-top:0; color:var(--dark);">📝 نشر تدوينة طبية جديدة</h4>
-        <input type="text" id="postTitle" placeholder="عنوان التدوينة" class="modern-input">
-        <textarea id="postText" placeholder="محتوى التدوينة..." class="modern-input" rows="4" style="resize:vertical;"></textarea>
-        <input type="file" id="imageInput" accept="image/*" class="modern-input" style="padding:10px;">
-        <button onclick="addPost()" class="btn-key btn-primary">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>            <span>نشر في المدونة</span>
-        </button>
+        <h4>📝 نشر تدوينة</h4>
+        <input type="text" id="postTitle" placeholder="العنوان" class="modern-input">
+        <textarea id="postText" placeholder="المحتوى" class="modern-input" rows="3"></textarea>
+        <input type="file" id="imageInput" accept="image/*" class="modern-input">
+        <button onclick="addPost()" class="btn-key btn-primary">نشر</button>
     </div>
 </div>
 
 <div id="app-content" class="hidden">
-    
     <section class="section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
             <h2 style="color:var(--primary); margin:0;">📰 المدونة الطبية</h2>
@@ -848,39 +655,25 @@
 
     <footer>
         <div class="footer-content">
-            <h2 style="margin-top:0;">📅 حجز موعد استشارة</h2>
-            
+            <h2>📅 حجز موعد</h2>
             <div class="appointment-form">
-                <input type="text" id="appointmentName" placeholder="الاسم الكامل *" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
-                <input type="tel" id="appointmentPhone" placeholder="رقم الجوال (مع رمز الدولة) *" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
-                <input type="date" id="appointmentDate" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
-                <textarea id="appointmentNotes" placeholder="ملاحظات إضافية (اختياري)" class="modern-input" rows="3" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2); resize:vertical;"></textarea>
-                <button onclick="bookAppointment()" class="btn-key btn-secondary">📩 إرسال طلب الحجز</button>
+                <input type="text" id="appointmentName" placeholder="الاسم الكامل *">
+                <input type="tel" id="appointmentPhone" placeholder="رقم الجوال *">
+                <input type="date" id="appointmentDate">
+                <textarea id="appointmentNotes" placeholder="ملاحظات (اختياري)" rows="2"></textarea>
+                <button onclick="bookAppointment()" class="btn-key btn-secondary">إرسال طلب الحجز</button>
             </div>
             
-            <div style="margin-top:30px; text-align:right;">
-                <h3>الأسئلة الشائعة</h3>
-                <details>
-                    <summary>كيف يمكنني حجز موعد؟</summary>
-                    <p style="margin-top:10px; color:#cbd5e1;">عبر نموذج الحجز أعلاه أو من خلال التواصل المباشر عبر زر الواتساب.</p>
-                </details>
-                <details>
-                    <summary>هل الاستشارات عن بُعد متاحة؟</summary>
-                    <p style="margin-top:10px; color:#cbd5e1;">نعم، نوفر استشارات فيديو وهاتفية بعد تأكيد الحجز.</p>
-                </details>
-            </div>
-            
-            <a id="whatsappLink" href="https://wa.me/" target="_blank" class="btn-footer">
-                💬 تواصل معنا عبر واتساب
-            </a>
-            <p style="margin-top:30px; font-size:13px; opacity:0.7;">© 2026 المنصة الطبية التخصصية. جميع الحقوق محفوظة.</p>
+            <a id="whatsappLink" href="https://wa.me/" target="_blank" class="btn-footer"> واتساب</a>
+            <p style="margin-top:30px; font-size:13px; opacity:0.7;">© 2026</p>
         </div>
     </footer>
 </div>
 
 <script>
     function switchTab(tab) {
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));        if (tab === 'login') {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        if (tab === 'login') {
             document.querySelectorAll('.tab-btn')[0].classList.add('active');
             document.getElementById('login-form').classList.remove('hidden');
             document.getElementById('register-form').classList.add('hidden');
@@ -891,6 +684,5 @@
         }
     }
 </script>
-
 </body>
 </html>
