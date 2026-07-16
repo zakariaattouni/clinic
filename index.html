@@ -23,33 +23,12 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // التحقق من حالة تسجيل الدخول
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                // التحقق من أن المستخدم مقبول (ليس حساب إدارة)
-                const q = query(collection(db, "users"), where("email", "==", user.email));
-                getDocs(q).then((querySnapshot) => {
-                    let isApproved = false;
-                    querySnapshot.forEach((doc) => {
-                        if (doc.data().isApproved) isApproved = true;
-                    });
-                    
-                    if (isApproved) {
-                        showAppContent();
-                        document.getElementById('user-status').textContent = `مرحباً، ${user.email}`;
-                        document.getElementById('logout-btn').classList.remove('hidden');
-                    }
-                });
-            }
-        });
-
-        // دالة مساعدة لإظهار محتوى الموقع فقط (بدون لوحة الإدارة)
         function showAppContent() {
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('admin-panel').classList.add('hidden');
-            document.getElementById('app-content').classList.remove('hidden');        }
+            document.getElementById('app-content').classList.remove('hidden');
+        }
 
-        // دالة مساعدة لإظهار لوحة الإدارة فقط (بدون محتوى الموقع)
         function showAdminPanel() {
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('app-content').classList.add('hidden');
@@ -57,7 +36,6 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // دالة مساعدة للعودة إلى شاشة الدخول
         function showLogin() {
             document.getElementById('login-section').classList.remove('hidden');
             document.getElementById('app-content').classList.add('hidden');
@@ -69,14 +47,14 @@
             const pass = document.getElementById('userPass').value;
             try {
                 await signInWithEmailAndPassword(auth, email, pass);
-                
-                // التحقق من حالة الموافقة على الحساب
-                const q = query(collection(db, "users"), where("email", "==", email));
+                                const q = query(collection(db, "users"), where("email", "==", email));
                 const querySnapshot = await getDocs(q);
                 let isApproved = false;
+                let userRole = 'patient';
                 
                 querySnapshot.forEach((doc) => {
                     if (doc.data().isApproved) isApproved = true;
+                    userRole = doc.data().role || 'patient';
                 });
 
                 if (!isApproved) {
@@ -96,7 +74,8 @@
             const pass = document.getElementById('newUserPass').value;
             try {
                 await createUserWithEmailAndPassword(auth, email, pass);
-                                await addDoc(collection(db, "users"), {
+                
+                await addDoc(collection(db, "users"), {
                     email: email,
                     isApproved: false,
                     role: 'patient',
@@ -116,14 +95,13 @@
             showLogin();
         };
 
-        // كلمة مرور الإدارة مشفرة
         const _adminKey = "c2FsZW0xOTU5"; 
-        
-        window.adminAccess = () => {
+                window.adminAccess = () => {
             const input = document.getElementById('adminPass').value;
             if (input === atob(_adminKey)) {
-                showAdminPanel(); // إظهار لوحة الإدارة فقط
+                showAdminPanel();
                 loadPendingUsers();
+                loadApprovedUsers();
                 loadPosts();
             } else { 
                 alert('كلمة مرور الإدارة غير صحيحة'); 
@@ -131,10 +109,8 @@
         };
 
         window.browseAsGuest = () => {
-            showAppContent(); // إظهار محتوى الموقع فقط
+            showAppContent();
         };
-
-        // --- وظائف الإدارة ---
 
         window.updateWhatsApp = () => {
             const num = document.getElementById('whatsappNumber').value;
@@ -142,10 +118,12 @@
             alert("تم حفظ رقم التواصل بنجاح");
         };
 
+        // تحميل الطلبات المعلقة
         window.loadPendingUsers = async () => {
             const q = query(collection(db, "users"), where("isApproved", "==", false));
             const querySnapshot = await getDocs(q);
-            const wrapper = document.getElementById('pending-users-wrapper');            wrapper.innerHTML = "";
+            const wrapper = document.getElementById('pending-users-wrapper');
+            wrapper.innerHTML = "";
             
             if (querySnapshot.empty) {
                 wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد طلبات تسجيل معلقة حالياً.</p>";
@@ -167,17 +145,62 @@
                             </button>
                             <button onclick="rejectUser('${docSnap.id}')" class="btn-action btn-delete">
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                                حذف
-                            </button>
+                                حذف                            </button>
                         </div>
                     </div>`;
             });
         };
 
+        // تحميل المستخدمين المقبولين (المشتركين النشطين)
+        window.loadApprovedUsers = async () => {
+            const q = query(collection(db, "users"), where("isApproved", "==", true));
+            const querySnapshot = await getDocs(q);
+            const wrapper = document.getElementById('approved-users-wrapper');
+            wrapper.innerHTML = "";
+            
+            if (querySnapshot.empty) {
+                wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا يوجد مشتركين مسجلين حالياً.</p>";
+                return;
+            }
+
+            let count = 0;
+            querySnapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                count++;
+                const roleBadge = data.role === 'vip' ? 
+                    '<span style="background:#ffd700; color:#000; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">مميز</span>' : 
+                    '<span style="background:#d1fae5; color:#059669; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">عادي</span>';
+                
+                wrapper.innerHTML += `
+                    <div class="user-card">
+                        <div class="user-info">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:5px;">
+                                <strong>${data.email}</strong>
+                                ${roleBadge}
+                            </div>
+                            <span class="post-date">تاريخ التسجيل: ${data.createdAt}</span>
+                        </div>
+                        <div class="user-actions">
+                            <button onclick="upgradeUser('${docSnap.id}', '${data.email}')" class="btn-action" style="background:#dbeafe; color:#2563eb;">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a2.5 2.5 0 0 1 2.5 2.5V4h-5v-.5A2.5 2.5 0 0 1 8 1zm3.5 3v-.5a3.5 3.5 0 1 0-7 0V4H1v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4h-3.5zM2 5h12v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5z"/></svg>
+                                ترقية
+                            </button>
+                            <button onclick="deleteApprovedUser('${docSnap.id}', '${data.email}')" class="btn-action btn-delete">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                                حذف
+                            </button>
+                        </div>
+                    </div>`;
+            });
+            
+            // عرض عدد المشتركين
+            document.getElementById('users-count').textContent = `(${count} مشترك)`;        };
+
         window.approveUser = async (docId) => {
             if(confirm("هل أنت متأكد من قبول هذا المستخدم وتفعيل حسابه؟")) {
                 await updateDoc(doc(db, "users", docId), { isApproved: true });
                 loadPendingUsers();
+                loadApprovedUsers();
                 alert("تم قبول المستخدم وتفعيل حسابه بنجاح.");
             }
         };
@@ -190,15 +213,36 @@
             }
         };
 
+        window.upgradeUser = async (docId, email) => {
+            const currentRole = prompt(`ترقية المستخدم: ${email}\n\nاكتب نوع الترقية:\n- اتركه فارغاً للترقية إلى "مميز" (vip)\n- أو اكتب "patient\" للعودة إلى عادي`, "vip");
+            
+            if (currentRole === null) return; // إلغاء
+            
+            const newRole = currentRole.trim() === "" ? "vip" : "patient";
+            const roleName = newRole === "vip" ? "مميز" : "عادي";
+            
+            await updateDoc(doc(db, "users", docId), { role: newRole });
+            loadApprovedUsers();
+            alert(`تم ترقية المستخدم إلى: ${roleName}`);
+        };
+
+        window.deleteApprovedUser = async (docId, email) => {
+            if(confirm(`هل أنت متأكد من حذف المستخدم:\n${email}\n\nسيتم حذف الحساب نهائياً!`)) {
+                await deleteDoc(doc(db, "users", docId));
+                loadApprovedUsers();
+                alert("تم حذف المستخدم بنجاح.");
+            }
+        };
+
         window.addPost = async () => {
             const title = document.getElementById('postTitle').value;
             const text = document.getElementById('postText').value;
             const file = document.getElementById('imageInput').files[0];
-                        if (!file) {
+            
+            if (!file) {
                 alert('يرجى اختيار صورة');
                 return;
             }
-
             const reader = new FileReader();
             reader.onload = async (e) => {
                 await addDoc(collection(db, "posts"), { 
@@ -243,12 +287,12 @@
                             <button onclick="navigator.clipboard.writeText(window.location.href); alert('تم نسخ الرابط')" class="btn-action btn-share">
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11 2.5a2.5 2.5 0 1 1 .603 1.628l-6.718 3.12a2.499 2.499 0 0 1 0 1.504l6.718 3.12a2.5 2.5 0 1 1-.488.876l-6.718-3.12a2.5 2.5 0 1 1 0-3.256l6.718-3.12A2.5 2.5 0 0 1 11 2.5z"/></svg>
                                 مشاركة
-                            </button>                        </div>
+                            </button>
+                        </div>
                     </div>`;
             });
         };
-    </script>
-    <style>
+    </script>    <style>
         :root {
             --primary: #0077b6;
             --primary-light: #00b4d8;
@@ -273,7 +317,6 @@
 
         .hidden { display: none !important; }
 
-        /* شاشة الدخول */
         .login-fullscreen { 
             min-height: 100vh;
             display: flex;
@@ -288,18 +331,17 @@
             box-shadow: var(--shadow);
         }
 
-        /* لوحة الإدارة - شاشة مستقلة */
         .admin-fullscreen {
             min-height: 100vh;
             margin: 0 auto;
-            max-width: 800px;            width: 90%;
+            max-width: 800px;
+            width: 90%;
             padding: 30px 0;
         }
 
         .section { 
             background: var(--white); 
-            padding: 30px; 
-            margin: 20px auto; 
+            padding: 30px;             margin: 20px auto; 
             max-width: 800px; 
             width: 90%; 
             border-radius: var(--radius); 
@@ -341,14 +383,14 @@
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0, 119, 182, 0.4); }
 
         .btn-secondary { 
-            background: linear-gradient(135deg, var(--secondary) 0%, #21867a 100%);             color: white; box-shadow: 0 4px 15px rgba(42, 157, 143, 0.3); 
+            background: linear-gradient(135deg, var(--secondary) 0%, #21867a 100%); 
+            color: white; box-shadow: 0 4px 15px rgba(42, 157, 143, 0.3); 
         }
         .btn-secondary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(42, 157, 143, 0.4); }
 
         .btn-ghost {
             background: transparent; color: #666; border: 1px dashed #ccc; margin-top: 15px;
-        }
-        .btn-ghost:hover { background: #f8f9fa; color: var(--dark); border-color: #999; }
+        }        .btn-ghost:hover { background: #f8f9fa; color: var(--dark); border-color: #999; }
 
         .admin-divider { text-align: center; margin: 25px 0 15px; position: relative; }
         .admin-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e9ecef; }
@@ -390,14 +432,14 @@
         .post-text { color: #555; line-height: 1.6; margin-bottom: 15px; }
         .post-actions { display: flex; gap: 10px; }
         
-        .btn-action {             flex: 1; padding: 10px; border: none; border-radius: 8px; 
+        .btn-action { 
+            flex: 1; padding: 10px; border: none; border-radius: 8px; 
             font-family: 'Cairo'; font-weight: 600; cursor: pointer; 
             display: flex; align-items: center; justify-content: center; gap: 6px;
             transition: all 0.2s;
         }
         .btn-delete { background: #fee2e2; color: #dc2626; }
-        .btn-delete:hover { background: #fecaca; }
-        .btn-share { background: #d1fae5; color: #059669; }
+        .btn-delete:hover { background: #fecaca; }        .btn-share { background: #d1fae5; color: #059669; }
         .btn-share:hover { background: #a7f3d0; }
 
         footer { 
@@ -422,7 +464,6 @@
 </head>
 <body>
 
-<!-- 1. شاشة الدخول (تظهر أولاً) -->
 <section id="login-section" class="login-fullscreen">
     <div class="login-header">
         <h2>المنصة الطبية التخصصية</h2>
@@ -439,15 +480,15 @@
         <input type="password" id="userPass" placeholder="كلمة المرور" class="modern-input">
         <button onclick="handleLogin()" class="btn-key btn-primary">
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
-            <span>دخول المريض</span>        </button>
+            <span>دخول المريض</span>
+        </button>
         <p id="user-status" style="text-align:center; margin-top:10px; color:var(--secondary); font-weight:600;"></p>
     </div>
 
     <div id="register-form" class="auth-form hidden">
         <input type="email" id="newUserEmail" placeholder="البريد الإلكتروني" class="modern-input">
         <input type="password" id="newUserPass" placeholder="كلمة المرور (6 أحرف على الأقل)" class="modern-input">
-        <button onclick="handleRegister()" class="btn-key btn-secondary">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+        <button onclick="handleRegister()" class="btn-key btn-secondary">            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
             <span>إرسال طلب تسجيل جديد</span>
         </button>
     </div>
@@ -469,7 +510,6 @@
     </button>
 </section>
 
-<!-- 2. لوحة تحكم الإدارة (شاشة مستقلة بذاتها - لا تظهر المدونة معها) -->
 <div id="admin-panel" class="admin-fullscreen hidden">
     <div class="admin-panel-header">
         <h3>⚙️ لوحة تحكم الإدارة</h3>
@@ -485,14 +525,19 @@
     </div>
 
     <div class="admin-section">
-        <h4 style="margin-top:0; color:var(--dark);">👥 إدارة طلبات التسجيل المعلقة</h4>
+        <h4 style="margin-top:0; color:var(--dark);">⏳ الطلبات المعلقة <span style="font-size:14px; color:#666;">(بانتظار الموافقة)</span></h4>
         <div id="pending-users-wrapper"></div>
     </div>
+
+    <div class="admin-section">
+        <h4 style="margin-top:0; color:var(--dark);">👥 المشتركين النشطين <span id="users-count" style="font-size:14px; color:#666;"></span></h4>
+        <div id="approved-users-wrapper"></div>
+    </div>
+
     <div class="admin-section">
         <h4 style="margin-top:0; color:var(--dark);">📝 نشر تدوينة طبية جديدة</h4>
         <input type="text" id="postTitle" placeholder="عنوان التدوينة" class="modern-input">
-        <textarea id="postText" placeholder="محتوى التدوينة..." class="modern-input" rows="4" style="resize:vertical;"></textarea>
-        <input type="file" id="imageInput" accept="image/*" class="modern-input" style="padding:10px;">
+        <textarea id="postText" placeholder="محتوى التدوينة..." class="modern-input" rows="4" style="resize:vertical;"></textarea>        <input type="file" id="imageInput" accept="image/*" class="modern-input" style="padding:10px;">
         <button onclick="addPost()" class="btn-key btn-primary">
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
             <span>نشر في المدونة</span>
@@ -500,10 +545,8 @@
     </div>
 </div>
 
-<!-- 3. محتوى الموقع (يظهر للمرضى المسجلين والزوار فقط - وليس للإدارة) -->
 <div id="app-content" class="hidden">
     
-    <!-- قسم المدونة -->
     <section class="section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
             <h2 style="color:var(--primary); margin:0;">📰 المدونة الطبية</h2>
@@ -512,7 +555,6 @@
         <div id="posts-wrapper"></div>
     </section>
 
-    <!-- الفوتر -->
     <footer>
         <div class="footer-content">
             <h2 style="margin-top:0;">حجز موعد استشارة</h2>
@@ -537,14 +579,14 @@
             </a>
             <p style="margin-top:30px; font-size:13px; opacity:0.7;">© 2026 المنصة الطبية التخصصية. جميع الحقوق محفوظة.</p>
         </div>
-    </footer></div>
+    </footer>
+</div>
 
 <script>
     function switchTab(tab) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         if (tab === 'login') {
-            document.querySelectorAll('.tab-btn')[0].classList.add('active');
-            document.getElementById('login-form').classList.remove('hidden');
+            document.querySelectorAll('.tab-btn')[0].classList.add('active');            document.getElementById('login-form').classList.remove('hidden');
             document.getElementById('register-form').classList.add('hidden');
         } else {
             document.querySelectorAll('.tab-btn')[1].classList.add('active');
