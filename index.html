@@ -26,12 +26,43 @@
         // التحقق من حالة تسجيل الدخول
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                document.getElementById('login-section').classList.add('hidden');
-                document.getElementById('app-content').classList.remove('hidden');
-                document.getElementById('user-status').textContent = `مرحباً، ${user.email}`;
-                document.getElementById('logout-btn').classList.remove('hidden');
+                // التحقق من أن المستخدم مقبول (ليس حساب إدارة)
+                const q = query(collection(db, "users"), where("email", "==", user.email));
+                getDocs(q).then((querySnapshot) => {
+                    let isApproved = false;
+                    querySnapshot.forEach((doc) => {
+                        if (doc.data().isApproved) isApproved = true;
+                    });
+                    
+                    if (isApproved) {
+                        showAppContent();
+                        document.getElementById('user-status').textContent = `مرحباً، ${user.email}`;
+                        document.getElementById('logout-btn').classList.remove('hidden');
+                    }
+                });
             }
         });
+
+        // دالة مساعدة لإظهار محتوى الموقع فقط (بدون لوحة الإدارة)
+        function showAppContent() {
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('admin-panel').classList.add('hidden');
+            document.getElementById('app-content').classList.remove('hidden');        }
+
+        // دالة مساعدة لإظهار لوحة الإدارة فقط (بدون محتوى الموقع)
+        function showAdminPanel() {
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('app-content').classList.add('hidden');
+            document.getElementById('admin-panel').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // دالة مساعدة للعودة إلى شاشة الدخول
+        function showLogin() {
+            document.getElementById('login-section').classList.remove('hidden');
+            document.getElementById('app-content').classList.add('hidden');
+            document.getElementById('admin-panel').classList.add('hidden');
+        }
 
         window.handleLogin = async () => {
             const email = document.getElementById('userEmail').value;
@@ -47,12 +78,14 @@
                 querySnapshot.forEach((doc) => {
                     if (doc.data().isApproved) isApproved = true;
                 });
-                // إذا لم يكن الحساب موافقاً عليه، نطرده فوراً
+
                 if (!isApproved) {
                     await signOut(auth);
                     alert('عذراً، حسابك لا يزال قيد مراجعة الإدارة ولم يتم تفعيله بعد.');
                     return;
                 }
+                
+                showAppContent();
             } catch (error) {
                 alert('خطأ في الدخول: ' + error.message);
             }
@@ -62,18 +95,14 @@
             const email = document.getElementById('newUserEmail').value;
             const pass = document.getElementById('newUserPass').value;
             try {
-                // إنشاء الحساب في Firebase Auth
                 await createUserWithEmailAndPassword(auth, email, pass);
-                
-                // حفظ الطلب في قاعدة البيانات كـ "قيد المراجعة"
-                await addDoc(collection(db, "users"), {
+                                await addDoc(collection(db, "users"), {
                     email: email,
                     isApproved: false,
                     role: 'patient',
                     createdAt: new Date().toLocaleDateString('ar-SA')
                 });
                 
-                // تسجيل الخروج فوراً حتى يوافق الإدارة
                 await signOut(auth);
                 alert('تم استلام طلب التسجيل بنجاح وهو قيد مراجعة الإدارة. سيتم تفعيل حسابك قريباً.');
                 switchTab('login');
@@ -84,9 +113,7 @@
 
         window.handleLogout = async () => {
             await signOut(auth);
-            document.getElementById('login-section').classList.remove('hidden');
-            document.getElementById('app-content').classList.add('hidden');
-            document.getElementById('admin-panel').classList.add('hidden');
+            showLogin();
         };
 
         // كلمة مرور الإدارة مشفرة
@@ -95,18 +122,16 @@
         window.adminAccess = () => {
             const input = document.getElementById('adminPass').value;
             if (input === atob(_adminKey)) {
-                document.getElementById('login-section').classList.add('hidden');
-                document.getElementById('admin-panel').classList.remove('hidden');                document.getElementById('app-content').classList.remove('hidden');
-                loadPendingUsers(); // تحميل طلبات التسجيل عند فتح لوحة الإدارة
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                showAdminPanel(); // إظهار لوحة الإدارة فقط
+                loadPendingUsers();
+                loadPosts();
             } else { 
                 alert('كلمة مرور الإدارة غير صحيحة'); 
             }
         };
 
         window.browseAsGuest = () => {
-            document.getElementById('login-section').classList.add('hidden');
-            document.getElementById('app-content').classList.remove('hidden');
+            showAppContent(); // إظهار محتوى الموقع فقط
         };
 
         // --- وظائف الإدارة ---
@@ -120,8 +145,7 @@
         window.loadPendingUsers = async () => {
             const q = query(collection(db, "users"), where("isApproved", "==", false));
             const querySnapshot = await getDocs(q);
-            const wrapper = document.getElementById('pending-users-wrapper');
-            wrapper.innerHTML = "";
+            const wrapper = document.getElementById('pending-users-wrapper');            wrapper.innerHTML = "";
             
             if (querySnapshot.empty) {
                 wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد طلبات تسجيل معلقة حالياً.</p>";
@@ -145,7 +169,8 @@
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
                                 حذف
                             </button>
-                        </div>                    </div>`;
+                        </div>
+                    </div>`;
             });
         };
 
@@ -158,7 +183,7 @@
         };
 
         window.rejectUser = async (docId) => {
-            if(confirm("هل أنت متأكد من حذف هذا الطلب؟ لن يتمكن المستخدم من الدخول نهائياً.")) {
+            if(confirm("هل أنت متأكد من حذف هذا الطلب؟")) {
                 await deleteDoc(doc(db, "users", docId));
                 loadPendingUsers();
                 alert("تم حذف طلب التسجيل.");
@@ -169,8 +194,7 @@
             const title = document.getElementById('postTitle').value;
             const text = document.getElementById('postText').value;
             const file = document.getElementById('imageInput').files[0];
-            
-            if (!file) {
+                        if (!file) {
                 alert('يرجى اختيار صورة');
                 return;
             }
@@ -186,7 +210,6 @@
                 document.getElementById('postTitle').value = '';
                 document.getElementById('postText').value = '';
                 document.getElementById('imageInput').value = '';
-                loadPosts();
                 alert('تم نشر التدوينة بنجاح');
             };
             reader.readAsDataURL(file);
@@ -194,7 +217,8 @@
 
         window.loadPosts = async () => {
             const querySnapshot = await getDocs(collection(db, "posts"));
-            const wrapper = document.getElementById('posts-wrapper');            wrapper.innerHTML = "";
+            const wrapper = document.getElementById('posts-wrapper');
+            wrapper.innerHTML = "";
             
             if (querySnapshot.empty) {
                 wrapper.innerHTML = "<p style='text-align:center; color:#666;'>لا توجد تدوينات حالياً</p>";
@@ -219,13 +243,10 @@
                             <button onclick="navigator.clipboard.writeText(window.location.href); alert('تم نسخ الرابط')" class="btn-action btn-share">
                                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11 2.5a2.5 2.5 0 1 1 .603 1.628l-6.718 3.12a2.499 2.499 0 0 1 0 1.504l6.718 3.12a2.5 2.5 0 1 1-.488.876l-6.718-3.12a2.5 2.5 0 1 1 0-3.256l6.718-3.12A2.5 2.5 0 0 1 11 2.5z"/></svg>
                                 مشاركة
-                            </button>
-                        </div>
+                            </button>                        </div>
                     </div>`;
             });
         };
-        
-        window.loadPosts();
     </script>
     <style>
         :root {
@@ -233,7 +254,6 @@
             --primary-light: #00b4d8;
             --secondary: #2a9d8f;
             --dark: #264653;
-            --bg: #f0f4f8;
             --white: #ffffff;
             --shadow: 0 8px 32px rgba(0, 119, 182, 0.1);
             --radius: 16px;
@@ -243,7 +263,8 @@
         
         body { 
             font-family: 'Cairo', sans-serif; 
-            background: linear-gradient(135deg, #e0f7fa 0%, #f0f4f8 100%);             margin: 0; 
+            background: linear-gradient(135deg, #e0f7fa 0%, #f0f4f8 100%); 
+            margin: 0; 
             min-height: 100vh; 
             display: flex; 
             flex-direction: column; 
@@ -252,19 +273,27 @@
 
         .hidden { display: none !important; }
 
+        /* شاشة الدخول */
         .login-fullscreen { 
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             justify-content: center;
-            margin: 0;
+            margin: 0 auto;
             max-width: 450px; 
             width: 90%;
             background: var(--white); 
             padding: 40px 30px; 
             border-radius: var(--radius); 
             box-shadow: var(--shadow);
-            border: 1px solid rgba(255,255,255,0.8);
+        }
+
+        /* لوحة الإدارة - شاشة مستقلة */
+        .admin-fullscreen {
+            min-height: 100vh;
+            margin: 0 auto;
+            max-width: 800px;            width: 90%;
+            padding: 30px 0;
         }
 
         .section { 
@@ -275,7 +304,6 @@
             width: 90%; 
             border-radius: var(--radius); 
             box-shadow: var(--shadow);
-            border: 1px solid rgba(255,255,255,0.8);
         }
 
         .login-header { text-align: center; margin-bottom: 25px; }
@@ -292,7 +320,8 @@
 
         .modern-input { 
             width: 100%; padding: 14px 16px; margin: 8px 0; 
-            border: 2px solid #e9ecef; border-radius: 12px;             font-family: 'Cairo', sans-serif; font-size: 15px;
+            border: 2px solid #e9ecef; border-radius: 12px; 
+            font-family: 'Cairo', sans-serif; font-size: 15px;
             transition: all 0.3s ease; outline: none;
         }
         .modern-input:focus { border-color: var(--primary-light); box-shadow: 0 0 0 4px rgba(0, 180, 216, 0.1); }
@@ -312,8 +341,7 @@
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0, 119, 182, 0.4); }
 
         .btn-secondary { 
-            background: linear-gradient(135deg, var(--secondary) 0%, #21867a 100%); 
-            color: white; box-shadow: 0 4px 15px rgba(42, 157, 143, 0.3); 
+            background: linear-gradient(135deg, var(--secondary) 0%, #21867a 100%);             color: white; box-shadow: 0 4px 15px rgba(42, 157, 143, 0.3); 
         }
         .btn-secondary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(42, 157, 143, 0.4); }
 
@@ -331,17 +359,28 @@
         }
         .btn-admin:hover { background: #e9ecef; border-color: #dee2e6; transform: translateY(-1px); }
 
-        .admin-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .admin-panel-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 20px; padding: 20px; 
+            background: var(--white); border-radius: var(--radius); 
+            box-shadow: var(--shadow);
+        }
+        .admin-panel-header h3 { margin: 0; color: var(--primary); }
         .btn-logout { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-family: 'Cairo'; font-weight: 600; }
         .btn-logout:hover { background: #bb2d3b; }
 
-        /* بطاقات المستخدمين والتدوينات */
+        .admin-section {
+            background: var(--white); padding: 25px; margin-bottom: 20px;
+            border-radius: var(--radius); box-shadow: var(--shadow);
+        }
+
         .user-card, .post-card { 
             background: #fafafa; border-radius: 12px; padding: 20px; 
             margin-bottom: 15px; border: 1px solid #eee; transition: transform 0.2s;
         }
         .user-card:hover, .post-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-                .user-info { display: flex; flex-direction: column; gap: 5px; margin-bottom: 15px; }
+        
+        .user-info { display: flex; flex-direction: column; gap: 5px; margin-bottom: 15px; }
         .user-actions { display: flex; gap: 10px; }
 
         .post-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -351,8 +390,7 @@
         .post-text { color: #555; line-height: 1.6; margin-bottom: 15px; }
         .post-actions { display: flex; gap: 10px; }
         
-        .btn-action { 
-            flex: 1; padding: 10px; border: none; border-radius: 8px; 
+        .btn-action {             flex: 1; padding: 10px; border: none; border-radius: 8px; 
             font-family: 'Cairo'; font-weight: 600; cursor: pointer; 
             display: flex; align-items: center; justify-content: center; gap: 6px;
             transition: all 0.2s;
@@ -384,13 +422,14 @@
 </head>
 <body>
 
-<!-- 1. بوابة الدخول (تظهر أولاً وحدها) -->
+<!-- 1. شاشة الدخول (تظهر أولاً) -->
 <section id="login-section" class="login-fullscreen">
     <div class="login-header">
         <h2>المنصة الطبية التخصصية</h2>
         <p>مرحباً بك، يرجى اختيار نوع الدخول المناسب</p>
     </div>
-        <div class="auth-tabs">
+    
+    <div class="auth-tabs">
         <button class="tab-btn active" onclick="switchTab('login')">تسجيل الدخول</button>
         <button class="tab-btn" onclick="switchTab('register')">حساب جديد</button>
     </div>
@@ -400,8 +439,7 @@
         <input type="password" id="userPass" placeholder="كلمة المرور" class="modern-input">
         <button onclick="handleLogin()" class="btn-key btn-primary">
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
-            <span>دخول المريض</span>
-        </button>
+            <span>دخول المريض</span>        </button>
         <p id="user-status" style="text-align:center; margin-top:10px; color:var(--secondary); font-weight:600;"></p>
     </div>
 
@@ -431,32 +469,26 @@
     </button>
 </section>
 
-<!-- 2. محتوى الموقع الرئيسي (مخفي افتراضياً) -->
-<div id="app-content" class="hidden">
+<!-- 2. لوحة تحكم الإدارة (شاشة مستقلة بذاتها - لا تظهر المدونة معها) -->
+<div id="admin-panel" class="admin-fullscreen hidden">
+    <div class="admin-panel-header">
+        <h3>⚙️ لوحة تحكم الإدارة</h3>
+        <button onclick="showLogin()" class="btn-logout">خروج</button>
+    </div>
     
-    <!-- لوحة تحكم الإدارة (منفصلة تماماً عن المدونة) -->
-    <section id="admin-panel" class="section hidden">
-        <div class="admin-panel-header">
-            <h3 style="margin:0; color:var(--primary);">⚙️ لوحة تحكم الإدارة</h3>
-            <button onclick="document.getElementById('admin-panel').classList.add('hidden')" class="btn-logout">إخفاء اللوحة</button>
-        </div>        
-        <div style="background:#f0f9ff; padding:15px; border-radius:12px; margin-bottom:20px; border:1px solid #bae6fd;">
-            <label style="font-weight:700; display:block; margin-bottom:8px;">رقم الواتساب للتواصل</label>
-            <div style="display:flex; gap:10px;">
-                <input type="text" id="whatsappNumber" placeholder="مثال: 966500000000" class="modern-input" style="margin:0;">
-                <button onclick="updateWhatsApp()" class="btn-key btn-secondary" style="width:auto; margin:0; padding:0 20px;">حفظ</button>
-            </div>
+    <div class="admin-section">
+        <label style="font-weight:700; display:block; margin-bottom:8px;">📱 رقم الواتساب للتواصل</label>
+        <div style="display:flex; gap:10px;">
+            <input type="text" id="whatsappNumber" placeholder="مثال: 966500000000" class="modern-input" style="margin:0;">
+            <button onclick="updateWhatsApp()" class="btn-key btn-secondary" style="width:auto; margin:0; padding:0 20px;">حفظ</button>
         </div>
+    </div>
 
-        <hr style="border:0; border-top:1px solid #eee; margin:20px 0;">
-        
+    <div class="admin-section">
         <h4 style="margin-top:0; color:var(--dark);">👥 إدارة طلبات التسجيل المعلقة</h4>
-        <div id="pending-users-wrapper">
-            <!-- هنا تظهر قائمة المستخدمين بانتظار الموافقة -->
-        </div>
-
-        <hr style="border:0; border-top:1px solid #eee; margin:20px 0;">
-        
+        <div id="pending-users-wrapper"></div>
+    </div>
+    <div class="admin-section">
         <h4 style="margin-top:0; color:var(--dark);">📝 نشر تدوينة طبية جديدة</h4>
         <input type="text" id="postTitle" placeholder="عنوان التدوينة" class="modern-input">
         <textarea id="postText" placeholder="محتوى التدوينة..." class="modern-input" rows="4" style="resize:vertical;"></textarea>
@@ -465,9 +497,13 @@
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
             <span>نشر في المدونة</span>
         </button>
-    </section>
+    </div>
+</div>
 
-    <!-- قسم المدونة (منفصل ويظهر للجميع) -->
+<!-- 3. محتوى الموقع (يظهر للمرضى المسجلين والزوار فقط - وليس للإدارة) -->
+<div id="app-content" class="hidden">
+    
+    <!-- قسم المدونة -->
     <section class="section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
             <h2 style="color:var(--primary); margin:0;">📰 المدونة الطبية</h2>
@@ -488,7 +524,8 @@
                 <h3>الأسئلة الشائعة</h3>
                 <details>
                     <summary>كيف يمكنني حجز موعد؟</summary>
-                    <p style="margin-top:10px; color:#cbd5e1;">عبر نموذج الحجز أعلاه أو من خلال التواصل المباشر عبر زر الواتساب.</p>                </details>
+                    <p style="margin-top:10px; color:#cbd5e1;">عبر نموذج الحجز أعلاه أو من خلال التواصل المباشر عبر زر الواتساب.</p>
+                </details>
                 <details>
                     <summary>هل الاستشارات عن بُعد متاحة؟</summary>
                     <p style="margin-top:10px; color:#cbd5e1;">نعم، نوفر استشارات فيديو وهاتفية بعد تأكيد الحجز.</p>
@@ -500,8 +537,7 @@
             </a>
             <p style="margin-top:30px; font-size:13px; opacity:0.7;">© 2026 المنصة الطبية التخصصية. جميع الحقوق محفوظة.</p>
         </div>
-    </footer>
-</div>
+    </footer></div>
 
 <script>
     function switchTab(tab) {
