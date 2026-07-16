@@ -4,93 +4,516 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>المنصة الطبية التخصصية</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCBbeaPoAYILiVX3yGqhtdvEktZ5DIxlpY",
+            authDomain: "clinic-fa8a2.firebaseapp.com",
+            projectId: "clinic-fa8a2",
+            storageBucket: "clinic-fa8a2.firebasestorage.app",
+            messagingSenderId: "316441755643",
+            appId: "1:316441755643:web:ba058608b7f7196596155e"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // التحقق من حالة تسجيل الدخول
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('app-content').classList.remove('hidden');
+                document.getElementById('user-status').textContent = `مرحباً، ${user.email}`;
+                document.getElementById('logout-btn').classList.remove('hidden');
+            }
+        });
+
+        window.handleLogin = async () => {
+            const email = document.getElementById('userEmail').value;
+            const pass = document.getElementById('userPass').value;
+            try {
+                await signInWithEmailAndPassword(auth, email, pass);
+                
+                // التحقق من حالة الموافقة على الحساب
+                const q = query(collection(db, "users"), where("email", "==", email));
+                const querySnapshot = await getDocs(q);
+                let isApproved = false;
+                
+                querySnapshot.forEach((doc) => {
+                    if (doc.data().isApproved) isApproved = true;
+                });
+                // إذا لم يكن الحساب موافقاً عليه، نطرده فوراً
+                if (!isApproved) {
+                    await signOut(auth);
+                    alert('عذراً، حسابك لا يزال قيد مراجعة الإدارة ولم يتم تفعيله بعد.');
+                    return;
+                }
+            } catch (error) {
+                alert('خطأ في الدخول: ' + error.message);
+            }
+        };
+
+        window.handleRegister = async () => {
+            const email = document.getElementById('newUserEmail').value;
+            const pass = document.getElementById('newUserPass').value;
+            try {
+                // إنشاء الحساب في Firebase Auth
+                await createUserWithEmailAndPassword(auth, email, pass);
+                
+                // حفظ الطلب في قاعدة البيانات كـ "قيد المراجعة"
+                await addDoc(collection(db, "users"), {
+                    email: email,
+                    isApproved: false,
+                    role: 'patient',
+                    createdAt: new Date().toLocaleDateString('ar-SA')
+                });
+                
+                // تسجيل الخروج فوراً حتى يوافق الإدارة
+                await signOut(auth);
+                alert('تم استلام طلب التسجيل بنجاح وهو قيد مراجعة الإدارة. سيتم تفعيل حسابك قريباً.');
+                switchTab('login');
+            } catch (error) {
+                alert('خطأ في التسجيل: ' + error.message);
+            }
+        };
+
+        window.handleLogout = async () => {
+            await signOut(auth);
+            document.getElementById('login-section').classList.remove('hidden');
+            document.getElementById('app-content').classList.add('hidden');
+            document.getElementById('admin-panel').classList.add('hidden');
+        };
+
+        // كلمة مرور الإدارة مشفرة
+        const _adminKey = "c2FsZW0xOTU5"; 
+        
+        window.adminAccess = () => {
+            const input = document.getElementById('adminPass').value;
+            if (input === atob(_adminKey)) {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('admin-panel').classList.remove('hidden');                document.getElementById('app-content').classList.remove('hidden');
+                loadPendingUsers(); // تحميل طلبات التسجيل عند فتح لوحة الإدارة
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else { 
+                alert('كلمة مرور الإدارة غير صحيحة'); 
+            }
+        };
+
+        window.browseAsGuest = () => {
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('app-content').classList.remove('hidden');
+        };
+
+        // --- وظائف الإدارة ---
+
+        window.updateWhatsApp = () => {
+            const num = document.getElementById('whatsappNumber').value;
+            document.getElementById('whatsappLink').href = "https://wa.me/" + num;
+            alert("تم حفظ رقم التواصل بنجاح");
+        };
+
+        window.loadPendingUsers = async () => {
+            const q = query(collection(db, "users"), where("isApproved", "==", false));
+            const querySnapshot = await getDocs(q);
+            const wrapper = document.getElementById('pending-users-wrapper');
+            wrapper.innerHTML = "";
+            
+            if (querySnapshot.empty) {
+                wrapper.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>لا توجد طلبات تسجيل معلقة حالياً.</p>";
+                return;
+            }
+
+            querySnapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                wrapper.innerHTML += `
+                    <div class="user-card">
+                        <div class="user-info">
+                            <strong>${data.email}</strong>
+                            <span class="post-date">تاريخ الطلب: ${data.createdAt}</span>
+                        </div>
+                        <div class="user-actions">
+                            <button onclick="approveUser('${docSnap.id}')" class="btn-action btn-share">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/></svg>
+                                قبول
+                            </button>
+                            <button onclick="rejectUser('${docSnap.id}')" class="btn-action btn-delete">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                                حذف
+                            </button>
+                        </div>                    </div>`;
+            });
+        };
+
+        window.approveUser = async (docId) => {
+            if(confirm("هل أنت متأكد من قبول هذا المستخدم وتفعيل حسابه؟")) {
+                await updateDoc(doc(db, "users", docId), { isApproved: true });
+                loadPendingUsers();
+                alert("تم قبول المستخدم وتفعيل حسابه بنجاح.");
+            }
+        };
+
+        window.rejectUser = async (docId) => {
+            if(confirm("هل أنت متأكد من حذف هذا الطلب؟ لن يتمكن المستخدم من الدخول نهائياً.")) {
+                await deleteDoc(doc(db, "users", docId));
+                loadPendingUsers();
+                alert("تم حذف طلب التسجيل.");
+            }
+        };
+
+        window.addPost = async () => {
+            const title = document.getElementById('postTitle').value;
+            const text = document.getElementById('postText').value;
+            const file = document.getElementById('imageInput').files[0];
+            
+            if (!file) {
+                alert('يرجى اختيار صورة');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                await addDoc(collection(db, "posts"), { 
+                    title, 
+                    text, 
+                    img: e.target.result,
+                    date: new Date().toLocaleDateString('ar-SA')
+                });
+                document.getElementById('postTitle').value = '';
+                document.getElementById('postText').value = '';
+                document.getElementById('imageInput').value = '';
+                loadPosts();
+                alert('تم نشر التدوينة بنجاح');
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.loadPosts = async () => {
+            const querySnapshot = await getDocs(collection(db, "posts"));
+            const wrapper = document.getElementById('posts-wrapper');            wrapper.innerHTML = "";
+            
+            if (querySnapshot.empty) {
+                wrapper.innerHTML = "<p style='text-align:center; color:#666;'>لا توجد تدوينات حالياً</p>";
+                return;
+            }
+
+            querySnapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                wrapper.innerHTML += `
+                    <div class="post-card">
+                        <div class="post-header">
+                            <h3>${data.title}</h3>
+                            <span class="post-date">${data.date || ''}</span>
+                        </div>
+                        <img src="${data.img}" alt="صورة التدوينة" class="post-image">
+                        <p class="post-text">${data.text}</p>
+                        <div class="post-actions">
+                            <button onclick="deleteDoc(doc(db, 'posts', '${docSnap.id}')).then(()=>loadPosts())" class="btn-action btn-delete">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                                حذف
+                            </button>
+                            <button onclick="navigator.clipboard.writeText(window.location.href); alert('تم نسخ الرابط')" class="btn-action btn-share">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11 2.5a2.5 2.5 0 1 1 .603 1.628l-6.718 3.12a2.499 2.499 0 0 1 0 1.504l6.718 3.12a2.5 2.5 0 1 1-.488.876l-6.718-3.12a2.5 2.5 0 1 1 0-3.256l6.718-3.12A2.5 2.5 0 0 1 11 2.5z"/></svg>
+                                مشاركة
+                            </button>
+                        </div>
+                    </div>`;
+            });
+        };
+        
+        window.loadPosts();
+    </script>
     <style>
-        body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; display: flex; flex-direction: column; min-height: 100vh; }
-        header { background: #00796b; color: #fff; padding: 20px; text-align: center; }
-        .blog-container, .admin-section { padding: 20px; max-width: 800px; margin: 20px auto; background: #fff; border-radius: 8px; width: 90%; }
+        :root {
+            --primary: #0077b6;
+            --primary-light: #00b4d8;
+            --secondary: #2a9d8f;
+            --dark: #264653;
+            --bg: #f0f4f8;
+            --white: #ffffff;
+            --shadow: 0 8px 32px rgba(0, 119, 182, 0.1);
+            --radius: 16px;
+        }
+
+        * { box-sizing: border-box; }
         
-        /* تنسيق زر المشاركة تحت التدوينة */
-        .share-post-btn { background-color: #00796b; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        body { 
+            font-family: 'Cairo', sans-serif; 
+            background: linear-gradient(135deg, #e0f7fa 0%, #f0f4f8 100%);             margin: 0; 
+            min-height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            color: var(--dark);
+        }
+
+        .hidden { display: none !important; }
+
+        .login-fullscreen { 
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            margin: 0;
+            max-width: 450px; 
+            width: 90%;
+            background: var(--white); 
+            padding: 40px 30px; 
+            border-radius: var(--radius); 
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255,255,255,0.8);
+        }
+
+        .section { 
+            background: var(--white); 
+            padding: 30px; 
+            margin: 20px auto; 
+            max-width: 800px; 
+            width: 90%; 
+            border-radius: var(--radius); 
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255,255,255,0.8);
+        }
+
+        .login-header { text-align: center; margin-bottom: 25px; }
+        .login-header h2 { color: var(--primary); margin: 0 0 8px 0; font-weight: 800; }
+        .login-header p { color: #666; margin: 0; font-size: 14px; }
+
+        .auth-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: #f8f9fa; padding: 5px; border-radius: 12px; }
+        .tab-btn { 
+            flex: 1; padding: 10px; border: none; background: transparent; 
+            font-family: 'Cairo', sans-serif; font-weight: 700; color: #666; 
+            border-radius: 8px; cursor: pointer; transition: all 0.3s ease;
+        }
+        .tab-btn.active { background: var(--white); color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+        .modern-input { 
+            width: 100%; padding: 14px 16px; margin: 8px 0; 
+            border: 2px solid #e9ecef; border-radius: 12px;             font-family: 'Cairo', sans-serif; font-size: 15px;
+            transition: all 0.3s ease; outline: none;
+        }
+        .modern-input:focus { border-color: var(--primary-light); box-shadow: 0 0 0 4px rgba(0, 180, 216, 0.1); }
+
+        .btn-key { 
+            width: 100%; padding: 14px; border: none; border-radius: 12px; 
+            font-family: 'Cairo', sans-serif; font-weight: 700; font-size: 16px; 
+            cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            margin-top: 10px;
+        }
         
-        footer { background: #333; color: white; padding: 20px; text-align: center; margin-top: auto; }
-        .faq-item { text-align: right; margin-bottom: 10px; border-bottom: 1px solid #555; padding-bottom: 5px; }
-        .btn-footer { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; text-decoration: none; color: white; margin: 5px; display: inline-block; }
-        .whatsapp-btn { background-color: #25d366; }
-        .hidden { display: none; }
-        input, textarea { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
+        .btn-primary { 
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); 
+            color: white; box-shadow: 0 4px 15px rgba(0, 119, 182, 0.3); 
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0, 119, 182, 0.4); }
+
+        .btn-secondary { 
+            background: linear-gradient(135deg, var(--secondary) 0%, #21867a 100%); 
+            color: white; box-shadow: 0 4px 15px rgba(42, 157, 143, 0.3); 
+        }
+        .btn-secondary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(42, 157, 143, 0.4); }
+
+        .btn-ghost {
+            background: transparent; color: #666; border: 1px dashed #ccc; margin-top: 15px;
+        }
+        .btn-ghost:hover { background: #f8f9fa; color: var(--dark); border-color: #999; }
+
+        .admin-divider { text-align: center; margin: 25px 0 15px; position: relative; }
+        .admin-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #e9ecef; }
+        .admin-divider span { background: var(--white); padding: 0 15px; position: relative; color: #999; font-size: 13px; }
+
+        .btn-admin { 
+            background: #f8f9fa; color: var(--dark); border: 2px solid #e9ecef; 
+        }
+        .btn-admin:hover { background: #e9ecef; border-color: #dee2e6; transform: translateY(-1px); }
+
+        .admin-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn-logout { background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-family: 'Cairo'; font-weight: 600; }
+        .btn-logout:hover { background: #bb2d3b; }
+
+        /* بطاقات المستخدمين والتدوينات */
+        .user-card, .post-card { 
+            background: #fafafa; border-radius: 12px; padding: 20px; 
+            margin-bottom: 15px; border: 1px solid #eee; transition: transform 0.2s;
+        }
+        .user-card:hover, .post-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+                .user-info { display: flex; flex-direction: column; gap: 5px; margin-bottom: 15px; }
+        .user-actions { display: flex; gap: 10px; }
+
+        .post-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .post-header h3 { margin: 0; color: var(--primary); font-size: 18px; }
+        .post-date { font-size: 12px; color: #999; }
+        .post-image { width: 100%; border-radius: 8px; margin-bottom: 12px; object-fit: cover; max-height: 300px; }
+        .post-text { color: #555; line-height: 1.6; margin-bottom: 15px; }
+        .post-actions { display: flex; gap: 10px; }
+        
+        .btn-action { 
+            flex: 1; padding: 10px; border: none; border-radius: 8px; 
+            font-family: 'Cairo'; font-weight: 600; cursor: pointer; 
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            transition: all 0.2s;
+        }
+        .btn-delete { background: #fee2e2; color: #dc2626; }
+        .btn-delete:hover { background: #fecaca; }
+        .btn-share { background: #d1fae5; color: #059669; }
+        .btn-share:hover { background: #a7f3d0; }
+
+        footer { 
+            background: var(--dark); color: white; padding: 40px 20px; 
+            text-align: center; margin-top: auto; 
+        }
+        .footer-content { max-width: 600px; margin: 0 auto; }
+        .btn-footer { 
+            display: inline-block; background: #25D366; color: white; 
+            padding: 12px 24px; border-radius: 50px; text-decoration: none; 
+            font-weight: 700; margin-top: 15px; transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+        }
+        .btn-footer:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4); }
+        
+        details { 
+            background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; 
+            margin-top: 10px; text-align: right; cursor: pointer;
+        }
+        summary { font-weight: 700; outline: none; }
     </style>
 </head>
 <body>
 
-<header>
-    <div style="font-size: 24px; font-weight: bold;">🏥 المنصة الطبية التخصصية</div>
-    <button onclick="document.getElementById('admin-login').classList.toggle('hidden')">دخول الإدارة</button>
-</header>
-
-<section id="admin-login" class="admin-section hidden">
-    <h3>لوحة التحكم</h3>
-    <input type="password" id="passInput" placeholder="كلمة السر">
-    <button onclick="checkPassword()">دخول</button>
-    <div id="admin-panel" class="hidden">
-        <input type="text" id="whatsappNumber" placeholder="رقم الواتساب">
-        <button onclick="updateWhatsApp()">حفظ الرقم</button>
-        <hr>
-        <input type="text" id="postTitle" placeholder="عنوان المقال">
-        <textarea id="postText" placeholder="المحتوى"></textarea>
-        <input type="file" id="imageInput" accept="image/*">
-        <button onclick="addPost()">نشر في المدونة</button>
+<!-- 1. بوابة الدخول (تظهر أولاً وحدها) -->
+<section id="login-section" class="login-fullscreen">
+    <div class="login-header">
+        <h2>المنصة الطبية التخصصية</h2>
+        <p>مرحباً بك، يرجى اختيار نوع الدخول المناسب</p>
     </div>
+        <div class="auth-tabs">
+        <button class="tab-btn active" onclick="switchTab('login')">تسجيل الدخول</button>
+        <button class="tab-btn" onclick="switchTab('register')">حساب جديد</button>
+    </div>
+
+    <div id="login-form" class="auth-form">
+        <input type="email" id="userEmail" placeholder="البريد الإلكتروني" class="modern-input">
+        <input type="password" id="userPass" placeholder="كلمة المرور" class="modern-input">
+        <button onclick="handleLogin()" class="btn-key btn-primary">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
+            <span>دخول المريض</span>
+        </button>
+        <p id="user-status" style="text-align:center; margin-top:10px; color:var(--secondary); font-weight:600;"></p>
+    </div>
+
+    <div id="register-form" class="auth-form hidden">
+        <input type="email" id="newUserEmail" placeholder="البريد الإلكتروني" class="modern-input">
+        <input type="password" id="newUserPass" placeholder="كلمة المرور (6 أحرف على الأقل)" class="modern-input">
+        <button onclick="handleRegister()" class="btn-key btn-secondary">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+            <span>إرسال طلب تسجيل جديد</span>
+        </button>
+    </div>
+
+    <div class="admin-divider">
+        <span>منطقة الإدارة</span>
+    </div>
+
+    <div class="admin-access">
+        <input type="password" id="adminPass" placeholder="كلمة مرور الإدارة" class="modern-input">
+        <button onclick="adminAccess()" class="btn-key btn-admin">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            <span>دخول الإدارة</span>
+        </button>
+    </div>
+
+    <button onclick="browseAsGuest()" class="btn-key btn-ghost">
+        <span>تصفح الموقع كزائر بدون تسجيل</span>
+    </button>
 </section>
 
-<section id="blog" class="blog-container">
-    <h2>أحدث المقالات والحالات</h2>
-    <div id="posts-wrapper"></div>
-</section>
+<!-- 2. محتوى الموقع الرئيسي (مخفي افتراضياً) -->
+<div id="app-content" class="hidden">
+    
+    <!-- لوحة تحكم الإدارة (منفصلة تماماً عن المدونة) -->
+    <section id="admin-panel" class="section hidden">
+        <div class="admin-panel-header">
+            <h3 style="margin:0; color:var(--primary);">⚙️ لوحة تحكم الإدارة</h3>
+            <button onclick="document.getElementById('admin-panel').classList.add('hidden')" class="btn-logout">إخفاء اللوحة</button>
+        </div>        
+        <div style="background:#f0f9ff; padding:15px; border-radius:12px; margin-bottom:20px; border:1px solid #bae6fd;">
+            <label style="font-weight:700; display:block; margin-bottom:8px;">رقم الواتساب للتواصل</label>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="whatsappNumber" placeholder="مثال: 966500000000" class="modern-input" style="margin:0;">
+                <button onclick="updateWhatsApp()" class="btn-key btn-secondary" style="width:auto; margin:0; padding:0 20px;">حفظ</button>
+            </div>
+        </div>
 
-<footer>
-    <section class="booking-section" style="color: #ddd;">
-        <h2>حجز موعد</h2>
-        <input type="text" placeholder="الاسم الكامل">
-        <input type="date">
-        <button onclick="alert('تم إرسال الطلب')" style="padding: 10px; width: 100%; background: #00796b; color: white; border: none; cursor: pointer;">إرسال طلب الحجز</button>
+        <hr style="border:0; border-top:1px solid #eee; margin:20px 0;">
+        
+        <h4 style="margin-top:0; color:var(--dark);">👥 إدارة طلبات التسجيل المعلقة</h4>
+        <div id="pending-users-wrapper">
+            <!-- هنا تظهر قائمة المستخدمين بانتظار الموافقة -->
+        </div>
+
+        <hr style="border:0; border-top:1px solid #eee; margin:20px 0;">
+        
+        <h4 style="margin-top:0; color:var(--dark);">📝 نشر تدوينة طبية جديدة</h4>
+        <input type="text" id="postTitle" placeholder="عنوان التدوينة" class="modern-input">
+        <textarea id="postText" placeholder="محتوى التدوينة..." class="modern-input" rows="4" style="resize:vertical;"></textarea>
+        <input type="file" id="imageInput" accept="image/*" class="modern-input" style="padding:10px;">
+        <button onclick="addPost()" class="btn-key btn-primary">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            <span>نشر في المدونة</span>
+        </button>
     </section>
-    <h3>الأسئلة الشائعة</h3>
-    <div class="faq-item">
-        <details>
-            <summary>كيف يمكنني حجز موعد؟</summary>
-            <p>يمكنك استخدام نموذج الحجز أعلاه أو التواصل مباشرة عبر واتساب.</p>
-        </details>
-    </div>
-    <div class="footer-buttons">
-        <a id="whatsappLink" href="#" target="_blank" class="btn-footer whatsapp-btn">واتساب</a>
-    </div>
-</footer>
+
+    <!-- قسم المدونة (منفصل ويظهر للجميع) -->
+    <section class="section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h2 style="color:var(--primary); margin:0;">📰 المدونة الطبية</h2>
+            <button id="logout-btn" onclick="handleLogout()" class="btn-logout hidden">تسجيل الخروج</button>
+        </div>
+        <div id="posts-wrapper"></div>
+    </section>
+
+    <!-- الفوتر -->
+    <footer>
+        <div class="footer-content">
+            <h2 style="margin-top:0;">حجز موعد استشارة</h2>
+            <input type="text" placeholder="الاسم الكامل" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
+            <input type="text" placeholder="رقم الجوال" class="modern-input" style="background:rgba(255,255,255,0.1); color:white; border-color:rgba(255,255,255,0.2);">
+            <button onclick="alert('تم إرسال طلب الحجز بنجاح، سنتواصل معك قريباً')" class="btn-key btn-secondary">إرسال طلب الحجز</button>
+            
+            <div style="margin-top:30px; text-align:right;">
+                <h3>الأسئلة الشائعة</h3>
+                <details>
+                    <summary>كيف يمكنني حجز موعد؟</summary>
+                    <p style="margin-top:10px; color:#cbd5e1;">عبر نموذج الحجز أعلاه أو من خلال التواصل المباشر عبر زر الواتساب.</p>                </details>
+                <details>
+                    <summary>هل الاستشارات عن بُعد متاحة؟</summary>
+                    <p style="margin-top:10px; color:#cbd5e1;">نعم، نوفر استشارات فيديو وهاتفية بعد تأكيد الحجز.</p>
+                </details>
+            </div>
+            
+            <a id="whatsappLink" href="https://wa.me/" target="_blank" class="btn-footer">
+                💬 تواصل معنا عبر واتساب
+            </a>
+            <p style="margin-top:30px; font-size:13px; opacity:0.7;">© 2026 المنصة الطبية التخصصية. جميع الحقوق محفوظة.</p>
+        </div>
+    </footer>
+</div>
 
 <script>
-    function checkPassword() {
-        if (document.getElementById('passInput').value === 'salem1959') {
-            document.getElementById('admin-panel').classList.remove('hidden');
-        } else { alert('خطأ في كلمة السر'); }
-    }
-    function updateWhatsApp() {
-        const num = document.getElementById('whatsappNumber').value;
-        document.getElementById('whatsappLink').href = "https://wa.me/" + num;
-        alert("تم التحديث");
-    }
-    function addPost() {
-        const title = document.getElementById('postTitle').value;
-        const text = document.getElementById('postText').value;
-        const file = document.getElementById('imageInput').files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const p = document.createElement('div');
-                // إضافة زر المشاركة هنا داخل التدوينة
-                p.innerHTML = `<h3>${title}</h3><img src="${e.target.result}" style="width:100%"><p>${text}</p>
-                               <button class="share-post-btn" onclick="alert('تم نسخ رابط المقال للمشاركة')">مشاركة المقال</button><hr>`;
-                document.getElementById('posts-wrapper').appendChild(p);
-            };
-            reader.readAsDataURL(file);
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        if (tab === 'login') {
+            document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+        } else {
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.remove('hidden');
         }
     }
 </script>
